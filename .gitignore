@@ -1,5 +1,4 @@
-node_modules/
+﻿backend/database.sqlite
+backend/uploads/
+**/node_modules/
 .env
-*.log
-
-node_modules/
