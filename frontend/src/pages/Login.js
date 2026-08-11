@@ -28,6 +28,8 @@ function GirisSayfasi({ onLogin }) {
       const res = await axios.post(`${BASE_URL}/api/login`, { tc_no: tcNo });
       const { user } = res.data;
 
+      // KULLANICI BİLGİLERİ LOCALSTORAGE'A KAYDEDİLİYOR
+      localStorage.setItem('userId', user.id); // <-- HESAP SİLME İÇİN GEREKLİ OLAN ID BURADA KAYDEDİLİYOR
       localStorage.setItem('userName', user.ad_soyad);
       localStorage.setItem('userTc', user.tc_no);
       localStorage.setItem('userRole', user.rol);
@@ -208,7 +210,7 @@ const styles = {
   },
   card: {
     width: '100%',
-    maxWidth: '340px', // Telefon ekranına uygun dar boyut
+    maxWidth: '340px',
     backgroundColor: '#ffffff',
     borderRadius: '14px',
     padding: '18px 14px',

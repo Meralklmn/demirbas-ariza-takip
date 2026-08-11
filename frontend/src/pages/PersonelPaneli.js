@@ -1,55 +1,69 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { toast } from 'react-toastify';
 import { 
-  AlertCircle, 
+  PlusCircle, 
+  History, 
+  Camera, 
   QrCode, 
   ListFilter, 
-  Camera, 
   Upload, 
-  CheckCircle2, 
   Clock, 
-  Send, 
   User, 
-  History, 
-  CheckCircle,
-  AlertTriangle,
-  ChevronRight
+  CheckCircle2, 
+  AlertCircle,
+  UserX
 } from 'lucide-react';
 
-const API_URL = 'https://demirbas-ariza-takip.onrender.com/api';
+const BASE_URL = 'https://demirbas-ariza-takip.onrender.com';
 
 function PersonelPaneli() {
-  const [userName] = useState(localStorage.getItem('userName') || 'Personel');
   const [demirbaslar, setDemirbaslar] = useState([]);
-  const [arizalar, setArizalar] = useState([]);
+  const [kullaniciArizalari, setKullaniciArizalari] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Aktif Sekme / Mod ('bildir' | 'gecmis')
-  const [aktifMod, setAktifMod] = useState('bildir');
+  const [personelAd, setPersonelAd] = useState('');
+  const [personelTc, setPersonelTc] = useState('');
 
-  // Form State'leri
+  const [aktifSekme, setAktifSekme] = useState('yeni_ariza');
   const [secimYontemi, setSecimYontemi] = useState('qr');
   const [secilenDemirbasId, setSecilenDemirbasId] = useState('');
   const [aciklama, setAciklama] = useState('');
-  const [fotograf, setFotograf] = useState(null);
+  const [resim, setResim] = useState(null);
   const [kameraAcik, setKameraAcik] = useState(false);
   const [gonderiliyor, setGonderiliyor] = useState(false);
 
-  // Verileri Çek
+  useEffect(() => {
+    const ad = localStorage.getItem('userName') || 'Personel';
+    const tc = localStorage.getItem('userTc') || '';
+    setPersonelAd(ad);
+    setPersonelTc(tc);
+  }, []);
+
   const verileriGetir = useCallback(async () => {
     try {
-      const [resD, resA] = await Promise.all([
-        axios.get(`${API_URL}/demirbaslar`),
-        axios.get(`${API_URL}/arizalar`)
+      const [resDemirbas, resAriza] = await Promise.all([
+        axios.get(`${BASE_URL}/api/demirbaslar`),
+        axios.get(`${BASE_URL}/api/arizalar`)
       ]);
 
-      setDemirbaslar(Array.isArray(resD.data) ? resD.data : []);
-      setArizalar(Array.isArray(resA.data) ? resA.data : []);
+      const demirbasList = Array.isArray(resDemirbas.data) ? resDemirbas.data : [];
+      const arizaList = Array.isArray(resAriza.data) ? resAriza.data : [];
+
+      setDemirbaslar(demirbasList);
+
+      const tc = localStorage.getItem('userTc');
+      if (tc) {
+        const filtrelenmis = arizaList.filter(a => a.bildiren_tc === tc || a.bildiren_kisi?.includes(localStorage.getItem('userName')));
+        setKullaniciArizalari(filtrelenmis);
+      } else {
+        setKullaniciArizalari(arizaList);
+      }
     } catch (err) {
-      console.error('Veri çekme hatası:', err);
-      toast.error('Veriler yüklenirken bir hata oluştu.');
+      console.error('Veri yükleme hatası:', err);
+      toast.error('Veriler sunucudan çekilemedi.');
     } finally {
       setLoading(false);
     }
@@ -59,13 +73,13 @@ function PersonelPaneli() {
     verileriGetir();
   }, [verileriGetir]);
 
-  // QR KOD OKUYUCU MANTIĞI
+  // QR KOD TARAYICI
   useEffect(() => {
     let scanner = null;
-    if (aktifMod === 'bildir' && secimYontemi === 'qr' && kameraAcik) {
+    if (aktifSekme === 'yeni_ariza' && secimYontemi === 'qr' && kameraAcik) {
       scanner = new Html5QrcodeScanner(
         "personel-qr-reader",
-        { fps: 10, qrbox: { width: 200, height: 200 } },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
         false
       );
 
@@ -82,7 +96,7 @@ function PersonelPaneli() {
               setSecilenDemirbasId(eslesen.id.toString());
               toast.success(`${eslesen.ad} seçildi.`);
             } else {
-              toast.error(`"${okunanQR}" QR koduna ait demirbaş bulunamadı.`);
+              toast.error(`"${okunanQR}" QR kodlu demirbaş bulunamadı.`);
             }
           }
           scanner.clear();
@@ -97,7 +111,7 @@ function PersonelPaneli() {
         scanner.clear().catch(e => console.error(e));
       }
     };
-  }, [kameraAcik, secimYontemi, demirbaslar, aktifMod]);
+  }, [kameraAcik, secimYontemi, demirbaslar, aktifSekme]);
 
   const handleYontemChange = (yontem) => {
     setSecimYontemi(yontem);
@@ -105,46 +119,72 @@ function PersonelPaneli() {
     setKameraAcik(false);
   };
 
-  // ARIZA KAYDI GÖNDERME
+  // ARIZA BİLDİRİMİ GÖNDERME
   const handleArizaGonder = async (e) => {
     e.preventDefault();
 
     if (!secilenDemirbasId) {
-      toast.warning('Lütfen arızalı cihazı QR okutarak veya listeden seçin.');
+      toast.warning('Lütfen bir demirbaş/cihaz seçin veya QR kodunu okutun.');
       return;
     }
 
     if (!aciklama.trim()) {
-      toast.warning('Lütfen arıza açıklamasını doldurunuz.');
+      toast.warning('Lütfen arıza açıklamasını yazın.');
       return;
     }
 
     setGonderiliyor(true);
 
-    const formData = new FormData();
-    formData.append('demirbas_id', secilenDemirbasId);
-    formData.append('aciklama', aciklama);
-    formData.append('bildiren_kisi', userName);
-    if (fotograf) {
-      formData.append('fotograf', fotograf);
-    }
-
     try {
-      await axios.post(`${API_URL}/arizalar`, formData, {
+      const formData = new FormData();
+      formData.append('demirbas_id', secilenDemirbasId);
+      formData.append('aciklama', aciklama);
+      formData.append('bildiren_kisi', personelAd);
+      formData.append('bildiren_tc', personelTc);
+
+      if (resim) {
+        formData.append('resim', resim);
+      }
+
+      await axios.post(`${BASE_URL}/api/arizalar`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      toast.success('Arıza bildirimi teknik ekibe iletildi.');
-      setAciklama('');
-      setFotograf(null);
+      toast.success('Arıza kaydı teknik ekibe başarıyla iletildi!');
       setSecilenDemirbasId('');
+      setAciklama('');
+      setResim(null);
+      setAktifSekme('gecmis');
       verileriGetir();
-      setAktifMod('gecmis');
     } catch (err) {
-      console.error('Gönderim hatası:', err);
-      toast.error('Arıza kaydı gönderilirken bir hata oluştu.');
+      console.error('Arıza kaydı hatası:', err);
+      toast.error('Arıza kaydı oluşturulurken bir hata oluştu.');
     } finally {
       setGonderiliyor(false);
+    }
+  };
+
+  // HESAP SİLME FONKSİYONU (DÜZELTİLDİ: BASE_URL VE /api YOLU KULLANILDILAR)
+  const handleHesapSil = async () => {
+    const userId = localStorage.getItem('userId');
+
+    if (!userId) {
+      alert('Oturum ID bilginiz bulunamadı. Lütfen yeniden giriş yapıp tekrar deneyin.');
+      return;
+    }
+
+    const onay = window.confirm('Hesabınızı kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.');
+    if (!onay) return;
+
+    try {
+      await axios.delete(`${BASE_URL}/api/kullanicilar/${userId}`);
+      toast.success('Hesabınız başarıyla silindi.');
+      localStorage.clear();
+      window.location.href = '/login';
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Hesap silme hatası:', err);
+      toast.error(err.response?.data?.error || 'Hesap silinirken sunucu hatası oluştu.');
     }
   };
 
@@ -152,218 +192,202 @@ function PersonelPaneli() {
     return (
       <div style={{ padding: '40px 16px', textAlign: 'center', color: '#64748b' }}>
         <Clock size={32} color="#800020" style={{ marginBottom: '10px' }} />
-        <div style={{ fontWeight: '600' }}>Panel Yükleniyor...</div>
+        <div style={{ fontWeight: '600' }}>Personel Paneli Yükleniyor...</div>
       </div>
     );
   }
 
   const seciliDemirbas = demirbaslar.find(d => d.id.toString() === secilenDemirbasId.toString());
-  const benimArizalarim = arizalar.filter(a => a.bildiren_kisi === userName || !a.bildiren_kisi);
 
   return (
     <div style={{ width: '100%', boxSizing: 'border-box' }}>
       
-      {/* KARŞILAMA KARTI */}
-      <div style={styles.userCard}>
-        <div style={styles.userAvatar}>
-          <User size={22} color="#800020" />
+      {/* KULLANICI KARŞILAMA KARTI & HESABIMI SİL */}
+      <div style={styles.headerCard}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={styles.userAvatarIcon}>
+            <User size={24} color="#800020" />
+          </div>
+          <div>
+            <h2 style={styles.welcomeTitle}>
+              Hoş Geldiniz, {personelAd}
+            </h2>
+            <div style={styles.subTitleText}>
+              Trabzon Ortahisar Belediyesi • Personel Arıza Bildirim Portalı
+            </div>
+          </div>
         </div>
-        <div>
-          <h2 style={styles.userNameText}>Selam, {userName}</h2>
-          <span style={styles.userRoleText}>Saha Personeli • Arıza Bildirim Ekranı</span>
-        </div>
+
+        {/* HESABIMI SİL BUTONU */}
+        <button onClick={handleHesapSil} style={styles.deleteAccountBtn}>
+          <UserX size={14} /> Hesabımı Sil
+        </button>
       </div>
 
-      {/* MOBİL SEKME BUTONLARI */}
+      {/* SEKME SEÇİMLERİ */}
       <div style={styles.tabGrid}>
         <button 
-          onClick={() => setAktifMod('bildir')}
-          style={{
-            ...styles.tabBtn,
-            ...(aktifMod === 'bildir' ? styles.activeTabBtn : {})
-          }}
+          type="button"
+          onClick={() => setAktifSekme('yeni_ariza')}
+          style={{ ...styles.tabBtn, ...(aktifSekme === 'yeni_ariza' ? styles.activeTabBtn : {}) }}
         >
-          <AlertCircle size={16} /> Arıza Bildir
+          <PlusCircle size={15} /> Yeni Arıza Bildir
         </button>
 
         <button 
-          onClick={() => setAktifMod('gecmis')}
-          style={{
-            ...styles.tabBtn,
-            ...(aktifMod === 'gecmis' ? styles.activeTabBtn : {})
-          }}
+          type="button"
+          onClick={() => setAktifSekme('gecmis')}
+          style={{ ...styles.tabBtn, ...(aktifSekme === 'gecmis' ? styles.activeTabBtn : {}) }}
         >
-          <History size={16} /> Kayıtlarım ({benimArizalarim.length})
+          <History size={15} /> Bildirdiğim Arıza Kayıtları ({kullaniciArizalari.length})
         </button>
       </div>
 
-      {/* 1. SEKME: ARIZA BİLDİRİM FORMU */}
-      {aktifMod === 'bildir' && (
+      {/* 1. SEKME: YENİ ARIZA BİLDİRİM FORMU */}
+      {aktifSekme === 'yeni_ariza' && (
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Yeni Arıza Bildirimi</h3>
+          <h3 style={styles.cardTitle}>
+            <AlertCircle size={18} color="#800020" /> Yeni Arıza Bildirimi Oluştur
+          </h3>
 
-          <form onSubmit={handleArizaGonder} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '14px' }}>
+          <form onSubmit={handleArizaGonder} style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             
-            {/* Seçim Yöntemi */}
+            {/* DEMİRBAŞ SEÇİMİ */}
             <div>
-              <label style={styles.label}>1. Cihaz Doğrulama Yöntemi</label>
+              <label style={styles.label}>1. DEMİRBAŞ DOĞRULAMA YÖNTEMİ:</label>
               <div style={styles.subTabGrid}>
                 <button
                   type="button"
                   onClick={() => handleYontemChange('qr')}
-                  style={{
-                    ...styles.subTabBtn,
-                    ...(secimYontemi === 'qr' ? styles.activeSubTab : {})
-                  }}
+                  style={{ ...styles.subTabBtn, ...(secimYontemi === 'qr' ? styles.activeSubTab : {}) }}
                 >
-                  <QrCode size={15} /> QR Okut
+                  <QrCode size={14} /> Karekod / Barkod Okut
                 </button>
                 <button
                   type="button"
                   onClick={() => handleYontemChange('manual')}
-                  style={{
-                    ...styles.subTabBtn,
-                    ...(secimYontemi === 'manual' ? styles.activeSubTab : {})
-                  }}
+                  style={{ ...styles.subTabBtn, ...(secimYontemi === 'manual' ? styles.activeSubTab : {}) }}
                 >
-                  <ListFilter size={15} /> Listeden Seç
+                  <ListFilter size={14} /> Envanter Listesinden Seç
                 </button>
               </div>
+
+              {secimYontemi === 'qr' && (
+                <div style={{ marginTop: '10px' }}>
+                  <button 
+                    type="button" 
+                    onClick={() => setKameraAcik(!kameraAcik)}
+                    style={{ ...styles.cameraBtn, background: kameraAcik ? '#ef4444' : '#0f172a' }}
+                  >
+                    <Camera size={16} /> {kameraAcik ? 'Kamerayı Kapat' : 'Kamerayı Aç & QR Kod Oku'}
+                  </button>
+
+                  {kameraAcik && (
+                    <div style={{ marginTop: '10px', background: '#ffffff', padding: '8px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                      <div id="personel-qr-reader" style={{ width: '100%' }}></div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {secimYontemi === 'manual' && (
+                <div style={{ marginTop: '10px' }}>
+                  <select 
+                    value={secilenDemirbasId} 
+                    onChange={(e) => setSecilenDemirbasId(e.target.value)} 
+                    style={styles.select}
+                  >
+                    <option value="">-- Arızalı Cihazı Seçin --</option>
+                    {demirbaslar.map(d => (
+                      <option key={d.id} value={d.id}>
+                        {d.ad} (QR: {d.qr_kod}) - Birim: {d.birim || 'Genel'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {seciliDemirbas && (
+                <div style={styles.selectedDeviceCard}>
+                  <div style={{ fontWeight: '800', color: '#1e293b', fontSize: '0.88rem' }}>
+                    ✓ Seçilen Cihaz: {seciliDemirbas.ad}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                    Kod: {seciliDemirbas.qr_kod} | Birim: {seciliDemirbas.birim || 'Genel'}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* QR Kamera Alanı */}
-            {secimYontemi === 'qr' && (
-              <div style={styles.boxWrapper}>
-                <button 
-                  type="button" 
-                  onClick={() => setKameraAcik(!kameraAcik)}
-                  style={{
-                    ...styles.cameraBtn,
-                    background: kameraAcik ? '#ef4444' : '#0f172a'
-                  }}
-                >
-                  <Camera size={18} /> {kameraAcik ? 'Kamerayı Kapat' : 'Kamerayı Aç & QR Tara'}
-                </button>
-
-                {kameraAcik && (
-                  <div style={styles.qrReaderBox}>
-                    <div id="personel-qr-reader" style={{ width: '100%' }}></div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Manuel Seçim Alanı */}
-            {secimYontemi === 'manual' && (
-              <div style={styles.boxWrapper}>
-                <select 
-                  value={secilenDemirbasId} 
-                  onChange={(e) => setSecilenDemirbasId(e.target.value)} 
-                  style={styles.mobileSelect}
-                >
-                  <option value="">-- Arızalı Cihazı Seçin --</option>
-                  {demirbaslar.map(d => (
-                    <option key={d.id} value={d.id}>
-                      {d.ad} (QR: {d.qr_kod})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* SEÇİLEN DEMİRBAŞ ONAY KARTI */}
-            {seciliDemirbas && (
-              <div style={styles.selectedBox}>
-                <CheckCircle size={20} color="#15803d" style={{ flexShrink: 0 }} />
-                <div>
-                  <div style={{ fontWeight: '700', color: '#14532d', fontSize: '0.9rem' }}>{seciliDemirbas.ad}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#166534' }}>Kod: {seciliDemirbas.qr_kod} | Birim: {seciliDemirbas.birim || 'Genel'}</div>
-                </div>
-              </div>
-            )}
-
-            {/* Açıklama */}
+            {/* AÇIKLAMA */}
             <div>
-              <label style={styles.label}>2. Arıza Detayı</label>
-              <textarea 
-                rows="3" 
-                placeholder="Yaşanan sorunu kısaca açıklayın..." 
-                value={aciklama} 
-                onChange={e => setAciklama(e.target.value)} 
-                required 
-                style={styles.mobileTextarea} 
+              <label style={styles.label}>2. ARIZA AÇIKLAMASI:</label>
+              <textarea
+                rows="3"
+                placeholder="Cihazda yaşadığınız teknik sorunu detaylıca açıklayınız..."
+                value={aciklama}
+                onChange={(e) => setAciklama(e.target.value)}
+                required
+                style={styles.textarea}
               />
             </div>
 
-            {/* Görsel Yükleme */}
+            {/* GÖRSEL YÜKLEME */}
             <div>
-              <label style={styles.label}>3. Fotoğraf Ekle (Opsiyonel)</label>
-              <label style={styles.fileLabel}>
-                <Upload size={18} color="#64748b" />
-                <span style={{ fontSize: '0.85rem', color: '#475569' }}>
-                  {fotograf ? fotograf.name : 'Fotoğraf Çek / Dosya Seç'}
-                </span>
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  onChange={e => setFotograf(e.target.files[0])} 
-                  style={{ display: 'none' }} 
+              <label style={styles.label}>3. ARIZA GÖRSELİ EKLE (OPSİYONEL):</label>
+              <div style={styles.fileInputWrapper}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setResim(e.target.files[0])}
+                  style={styles.fileInput}
                 />
-              </label>
+              </div>
             </div>
 
-            {/* Gönder Butonu */}
-            <button 
-              type="submit" 
-              disabled={gonderiliyor}
-              style={{
-                ...styles.submitBtn,
-                opacity: gonderiliyor ? 0.7 : 1
-              }}
-            >
-              <Send size={18} /> {gonderiliyor ? 'Gönderiliyor...' : 'Arıza Kaydını Gönder'}
+            <button type="submit" disabled={gonderiliyor} style={styles.submitBtn}>
+              {gonderiliyor ? 'Gönderiliyor...' : 'Arıza Kaydını Teknik Ekibe Gönder'}
             </button>
-
           </form>
         </div>
       )}
 
-      {/* 2. SEKME: BİLDİRDİĞİM ARIZA KAYITLARI (MOBİL DİKEY KARTLAR) */}
-      {aktifMod === 'gecmis' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {benimArizalarim.length === 0 ? (
-            <div style={styles.emptyCard}>Bildirdiğiniz aktif arıza kaydı yok.</div>
+      {/* 2. SEKME: GEÇMİŞ ARIZA KAYITLARI */}
+      {aktifSekme === 'gecmis' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {kullaniciArizalari.length === 0 ? (
+            <div style={styles.emptyCard}>Henüz oluşturduğunuz bir arıza kaydı bulunmuyor.</div>
           ) : (
-            benimArizalarim.map(a => (
-              <div key={a.id} style={styles.historyCard}>
-                <div style={styles.historyCardHeader}>
-                  <div style={{ fontWeight: '700', fontSize: '0.92rem', color: '#0f172a' }}>
-                    {a.demirbas_adi || `Demirbaş #${a.demirbas_id}`}
+            kullaniciArizalari.map(a => (
+              <div key={a.id} style={styles.itemCard}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.9rem' }}>
+                      {a.demirbas_adi || `Demirbaş #${a.demirbas_id}`}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
+                      Tarih: {a.tarih ? new Date(a.tarih).toLocaleDateString('tr-TR') : 'Bugün'}
+                    </div>
                   </div>
                   <span style={{
-                    ...styles.statusBadge,
-                    ...(a.durum === 'Çözüldü' ? styles.statusGreen : 
-                        a.durum === 'İşlemde' ? styles.statusBlue : styles.statusAmber)
+                    padding: '4px 10px',
+                    borderRadius: '8px',
+                    fontSize: '0.72rem',
+                    fontWeight: '700',
+                    background: a.durum === 'Çözüldü' ? '#dcfce7' : a.durum === 'İşlemde' ? '#e0f2fe' : '#fef3c7',
+                    color: a.durum === 'Çözüldü' ? '#15803d' : a.durum === 'İşlemde' ? '#0369a1' : '#b45309'
                   }}>
-                    {a.durum === 'Çözüldü' && <CheckCircle2 size={12} />}
-                    {a.durum === 'İşlemde' && <AlertTriangle size={12} />}
                     {a.durum || 'Beklemede'}
                   </span>
                 </div>
 
-                <div style={styles.historyCardBody}>
-                  <p style={{ margin: '4px 0 8px 0', fontSize: '0.85rem', color: '#334155' }}>{a.aciklama}</p>
-                  
-                  {a.cozum_notu && (
-                    <div style={styles.solutionNote}>
-                      <strong>Çözüm Notu:</strong> {a.cozum_notu}
-                    </div>
-                  )}
+                <p style={{ margin: '8px 0', fontSize: '0.82rem', color: '#334155' }}>{a.aciklama}</p>
 
-                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '6px' }}>
-                    Tarih: {a.bildirim_tarihi ? new Date(a.bildirim_tarihi).toLocaleDateString('tr-TR') : '-'}
+                {a.cozum_notu && (
+                  <div style={styles.solutionBox}>
+                    <strong>Teknik Ekip Notu:</strong> {a.cozum_notu}
                   </div>
-                </div>
+                )}
               </div>
             ))
           )}
@@ -375,33 +399,49 @@ function PersonelPaneli() {
 }
 
 const styles = {
-  userCard: {
+  headerCard: {
     background: '#ffffff',
     padding: '14px 16px',
     borderRadius: '16px',
     border: '1px solid #e2e8f0',
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    marginBottom: '14px'
+    justifyContent: 'space-between',
+    marginBottom: '12px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
   },
-  userAvatar: {
+  userAvatarIcon: {
     background: '#fdf2f2',
     padding: '10px',
     borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
-    justify: 'center'
+    justifyContent: 'center'
   },
-  userNameText: {
+  welcomeTitle: {
     margin: 0,
-    fontSize: '1rem',
+    fontSize: '1.05rem',
     fontWeight: '800',
     color: '#0f172a'
   },
-  userRoleText: {
-    fontSize: '0.75rem',
-    color: '#64748b'
+  subTitleText: {
+    fontSize: '0.72rem',
+    color: '#64748b',
+    fontWeight: '500',
+    marginTop: '2px'
+  },
+  deleteAccountBtn: {
+    background: '#fef2f2',
+    color: '#dc2626',
+    border: '1px solid #fecaca',
+    padding: '7px 11px',
+    borderRadius: '8px',
+    fontSize: '0.72rem',
+    fontWeight: '700',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px'
   },
   tabGrid: {
     display: 'grid',
@@ -409,50 +449,49 @@ const styles = {
     gap: '6px',
     background: '#ffffff',
     padding: '6px',
-    borderRadius: '14px',
+    borderRadius: '12px',
     border: '1px solid #e2e8f0',
-    marginBottom: '14px'
+    marginBottom: '12px'
   },
   tabBtn: {
-    padding: '12px',
+    padding: '10px 6px',
     border: 'none',
     background: 'transparent',
-    borderRadius: '10px',
-    fontSize: '0.85rem',
+    borderRadius: '8px',
+    fontSize: '0.78rem',
     fontWeight: '700',
     color: '#64748b',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
-    justify: 'center',
-    gap: '6px'
+    justifyContent: 'center',
+    gap: '4px'
   },
   activeTabBtn: {
     background: '#800020',
-    color: '#ffffff',
-    boxShadow: '0 2px 6px rgba(128,0,32,0.2)'
+    color: '#ffffff'
   },
   card: {
     background: '#ffffff',
-    padding: '18px 16px',
-    borderRadius: '16px',
-    border: '1px solid #e2e8f0',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+    padding: '16px',
+    borderRadius: '14px',
+    border: '1px solid #e2e8f0'
   },
   cardTitle: {
     margin: 0,
-    fontSize: '1rem',
+    fontSize: '0.95rem',
     fontWeight: '800',
     color: '#0f172a',
-    borderBottom: '1px solid #f1f5f9',
-    paddingBottom: '10px'
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px'
   },
   label: {
     display: 'block',
-    fontSize: '0.75rem',
+    fontSize: '0.7rem',
     fontWeight: '700',
     color: '#475569',
-    marginBottom: '6px',
+    marginBottom: '4px',
     textTransform: 'uppercase'
   },
   subTabGrid: {
@@ -461,149 +500,111 @@ const styles = {
     gap: '6px',
     background: '#f1f5f9',
     padding: '4px',
-    borderRadius: '10px'
+    borderRadius: '8px'
   },
   subTabBtn: {
-    padding: '10px',
+    padding: '8px',
     border: 'none',
     background: 'transparent',
-    borderRadius: '8px',
-    fontSize: '0.8rem',
+    borderRadius: '6px',
+    fontSize: '0.78rem',
     fontWeight: '600',
     color: '#64748b',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
-    justify: 'center',
-    gap: '6px'
+    justifyContent: 'center',
+    gap: '4px'
   },
   activeSubTab: {
     background: '#ffffff',
     color: '#0f172a',
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
   },
-  boxWrapper: {
-    background: '#f8fafc',
-    padding: '12px',
-    borderRadius: '12px',
-    border: '1px solid #e2e8f0'
-  },
   cameraBtn: {
     width: '100%',
-    padding: '12px',
+    padding: '10px',
     color: '#ffffff',
     border: 'none',
-    borderRadius: '10px',
+    borderRadius: '8px',
     fontWeight: '700',
-    fontSize: '0.85rem',
+    fontSize: '0.82rem',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
-    justify: 'center',
-    gap: '8px'
+    justifyContent: 'center',
+    gap: '6px'
   },
-  qrReaderBox: {
-    marginTop: '10px',
-    background: '#ffffff',
-    padding: '8px',
-    borderRadius: '10px',
-    border: '1px solid #cbd5e1'
-  },
-  mobileSelect: {
+  select: {
     width: '100%',
-    padding: '12px',
-    borderRadius: '10px',
+    padding: '10px 12px',
+    borderRadius: '8px',
     border: '1px solid #cbd5e1',
-    fontSize: '0.88rem',
-    backgroundColor: '#ffffff',
-    outline: 'none'
+    fontSize: '0.85rem',
+    outline: 'none',
+    backgroundColor: '#f8fafc'
   },
-  selectedBox: {
+  selectedDeviceCard: {
+    marginTop: '8px',
     background: '#f0fdf4',
     border: '1px solid #bbf7d0',
-    borderRadius: '12px',
-    padding: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
+    padding: '10px 12px',
+    borderRadius: '8px'
   },
-  mobileTextarea: {
+  textarea: {
     width: '100%',
-    padding: '12px',
-    borderRadius: '10px',
+    padding: '10px 12px',
+    borderRadius: '8px',
     border: '1px solid #cbd5e1',
-    fontSize: '0.9rem',
-    backgroundColor: '#f8fafc',
+    fontSize: '0.85rem',
     outline: 'none',
     boxSizing: 'border-box',
     fontFamily: 'inherit'
   },
-  fileLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    background: '#f8fafc',
-    padding: '12px',
-    borderRadius: '10px',
-    border: '1.5px dashed #cbd5e1',
-    cursor: 'pointer'
+  fileInputWrapper: {
+    border: '1px dashed #cbd5e1',
+    padding: '10px',
+    borderRadius: '8px',
+    background: '#f8fafc'
+  },
+  fileInput: {
+    fontSize: '0.8rem',
+    width: '100%'
   },
   submitBtn: {
     width: '100%',
-    padding: '15px',
+    padding: '12px',
     background: '#800020',
     color: '#ffffff',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: '10px',
     fontWeight: '700',
-    fontSize: '0.95rem',
+    fontSize: '0.88rem',
     cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justify: 'center',
-    gap: '8px'
+    marginTop: '6px'
   },
-  historyCard: {
+  itemCard: {
     background: '#ffffff',
-    borderRadius: '14px',
-    border: '1px solid #e2e8f0',
-    padding: '14px',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.03)'
-  },
-  historyCardHeader: {
-    display: 'flex',
-    justify: 'space-between',
-    alignItems: 'center',
-    borderBottom: '1px solid #f1f5f9',
-    paddingBottom: '8px'
-  },
-  statusBadge: {
-    padding: '4px 8px',
+    padding: '12px 14px',
     borderRadius: '12px',
-    fontSize: '0.72rem',
-    fontWeight: '700',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px'
-  },
-  statusGreen: { background: '#dcfce7', color: '#15803d' },
-  statusBlue: { background: '#e0f2fe', color: '#0369a1' },
-  statusAmber: { background: '#fef3c7', color: '#b45309' },
-  solutionNote: {
-    background: '#f8fafc',
-    padding: '8px 10px',
-    borderRadius: '8px',
-    fontSize: '0.78rem',
-    color: '#334155',
     border: '1px solid #e2e8f0'
+  },
+  solutionBox: {
+    marginTop: '8px',
+    padding: '8px 10px',
+    background: '#f1f5f9',
+    borderRadius: '6px',
+    fontSize: '0.78rem',
+    color: '#1e293b',
+    borderLeft: '3px solid #0284c7'
   },
   emptyCard: {
     background: '#ffffff',
-    padding: '30px',
+    padding: '24px',
     textAlign: 'center',
-    borderRadius: '14px',
+    borderRadius: '12px',
     color: '#94a3b8',
-    fontSize: '0.88rem'
+    fontSize: '0.85rem'
   }
 };
 

@@ -136,10 +136,50 @@ app.post('/api/login', (req, res) => {
     res.json({
       message: 'Giriş başarılı',
       user: {
+        id: row.id,
         tc_no: row.tc_no,
         ad_soyad: row.ad_soyad,
         rol: row.rol
       }
+    });
+  });
+});
+
+// Kullanıcı Hesabını Silme API'si
+app.delete('/api/kullanicilar/:id', (req, res) => {
+  const { id } = req.params;
+  const sql = 'DELETE FROM kullanicilar WHERE id = ?';
+
+  db.run(sql, [id], function (err) {
+    if (err) {
+      console.error('Kullanıcı silme hatası:', err);
+      return res.status(500).json({ error: 'Hesap silinirken bir hata oluştu.' });
+    }
+    res.json({ message: 'Kullanıcı hesabı başarıyla silindi.' });
+  });
+});
+
+// Bozuk ve Gereksiz Kayıtları Temizleme API'si (SQLITE DÜZELTİLDİ)
+app.get('/api/temizle-bozuk-kullanicilar', (req, res) => {
+  const sql = `
+    DELETE FROM kullanicilar 
+    WHERE ad_soyad IS NULL 
+       OR ad_soyad = 'undefined' 
+       OR ad_soyad = 'isimsiz' 
+       OR ad_soyad = '' 
+       OR tc_no IS NULL 
+       OR tc_no = 'undefined' 
+       OR tc_no = ''
+  `;
+
+  db.run(sql, [], function (err) {
+    if (err) {
+      console.error('Temizleme hatası:', err.message);
+      return res.status(500).json({ error: 'Temizlik yapılırken hata oluştu.' });
+    }
+    res.json({ 
+      message: 'Bozuk ve gereksiz kayıtlar başarıyla temizlendi!', 
+      silinen_kayit_sayisi: this.changes 
     });
   });
 });
@@ -177,7 +217,7 @@ app.post('/api/demirbaslar', async (req, res) => {
     }
 
     const demirbasId = this.lastID;
-    const targetUrl = `http://localhost:3000/demirbas/${demirbasId}`;
+    const targetUrl = `https://demirbas-ariza-takip.onrender.com/demirbas/${demirbasId}`;
     try {
       const qrDataUrl = await QRCode.toDataURL(targetUrl);
       res.json({ id: demirbasId, qr_kod, ad, kategori, birim, konum, alim_tarihi, targetUrl, qrDataUrl });
@@ -191,7 +231,7 @@ app.post('/api/demirbaslar', async (req, res) => {
 app.get('/api/demirbaslar/:id/qr', async (req, res) => {
   db.get('SELECT * FROM demirbaslar WHERE id = ?', [req.params.id], async (err, row) => {
     if (err || !row) return res.status(404).json({ error: 'Demirbaş bulunamadı' });
-    const targetUrl = `http://localhost:3000/demirbas/${row.id}`;
+    const targetUrl = `https://demirbas-ariza-takip.onrender.com/demirbas/${row.id}`;
     try {
       const qrDataUrl = await QRCode.toDataURL(targetUrl);
       res.json({ id: row.id, ad: row.ad, qr_kod: row.qr_kod, qrDataUrl });
@@ -255,5 +295,5 @@ app.put('/api/arizalar/:id', (req, res) => {
 
 // Sunucuyu Dinleme
 app.listen(PORT, () => {
-  console.log(`🚀 Sunucu http://localhost:${PORT} adresinde CANLI dinliyor...`);
+  console.log(` Sunucu http://localhost:${PORT} adresinde CANLI dinliyor...`);
 });
