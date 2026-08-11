@@ -160,8 +160,10 @@ app.delete('/api/kullanicilar/:id', (req, res) => {
 });
 
 // Bozuk ve Gereksiz Kayıtları Temizleme API'si (SQLITE DÜZELTİLDİ)
+// TÜM TABLOLARDAKİ BOZUK VERİLERİ TEMİZLEME API'Sİ
 app.get('/api/temizle-bozuk-kullanicilar', (req, res) => {
-  const sql = `
+  // 1. Bozuk Kullanıcıları Sil
+  const sqlKullanici = `
     DELETE FROM kullanicilar 
     WHERE ad_soyad IS NULL 
        OR ad_soyad = 'undefined' 
@@ -169,17 +171,28 @@ app.get('/api/temizle-bozuk-kullanicilar', (req, res) => {
        OR ad_soyad = '' 
        OR tc_no IS NULL 
        OR tc_no = 'undefined' 
-       OR tc_no = ''
+       OR tc_no = '';
   `;
 
-  db.run(sql, [], function (err) {
-    if (err) {
-      console.error('Temizleme hatası:', err.message);
-      return res.status(500).json({ error: 'Temizlik yapılırken hata oluştu.' });
-    }
-    res.json({ 
-      message: 'Bozuk ve gereksiz kayıtlar başarıyla temizlendi!', 
-      silinen_kayit_sayisi: this.changes 
+  // 2. Bozuk/Test Arıza Kayıtlarını Sil
+  const sqlAriza = `
+    DELETE FROM arizalar 
+    WHERE bildiren_kisi IS NULL 
+       OR bildiren_kisi = 'undefined' 
+       OR bildiren_kisi = 'isimsiz'
+       OR aciklama = 'undefined';
+  `;
+
+  db.run(sqlKullanici, [], function (err1) {
+    if (err1) console.error('Kullanıcı temizleme hatası:', err1.message);
+    
+    db.run(sqlAriza, [], function (err2) {
+      if (err2) console.error('Arıza temizleme hatası:', err2.message);
+      
+      res.json({ 
+        message: 'Tüm tablolardaki bozuk kayıtlar temizlendi!', 
+        silinen_kullanici: this.changes 
+      });
     });
   });
 });
