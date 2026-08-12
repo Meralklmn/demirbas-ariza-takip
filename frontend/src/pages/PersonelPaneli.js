@@ -8,7 +8,6 @@ import {
   Clock, 
   User, 
   AlertCircle,
-  UserX,
   Search,
   X
 } from 'lucide-react';
@@ -125,29 +124,6 @@ function PersonelPaneli() {
     }
   };
 
-  // HESAP SİLME FONKSİYONU
-  const handleHesapSil = async () => {
-    const userId = localStorage.getItem('userId');
-
-    if (!userId) {
-      alert('Oturum ID bilginiz bulunamadı. Lütfen yeniden giriş yapıp tekrar deneyin.');
-      return;
-    }
-
-    const onay = window.confirm('Hesabınızı kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.');
-    if (!onay) return;
-
-    try {
-      await axios.delete(`${BASE_URL}/api/kullanicilar/${userId}`);
-      toast.success('Hesabınız başarıyla silindi.');
-      localStorage.clear();
-      window.location.href = '/login';
-    } catch (err) {
-      console.error('Hesap silme hatası:', err);
-      toast.error(err.response?.data?.error || 'Hesap silinirken sunucu hatası oluştu.');
-    }
-  };
-
   if (loading) {
     return (
       <div style={{ padding: '40px 16px', textAlign: 'center', color: '#64748b' }}>
@@ -172,13 +148,9 @@ function PersonelPaneli() {
             <h2 style={styles.welcomeTitle}>
               Hoş Geldiniz, {personelAd}
             </h2>
-            
+           
           </div>
         </div>
-
-        <button onClick={handleHesapSil} style={styles.deleteAccountBtn}>
-          <UserX size={14} /> Hesabımı Sil
-        </button>
       </div>
 
       {/* SEKME SEÇİMLERİ */}
@@ -384,19 +356,6 @@ const styles = {
     color: '#64748b',
     fontWeight: '500',
     marginTop: '2px'
-  },
-  deleteAccountBtn: {
-    background: '#fef2f2',
-    color: '#dc2626',
-    border: '1px solid #fecaca',
-    padding: '7px 11px',
-    borderRadius: '8px',
-    fontSize: '0.72rem',
-    fontWeight: '700',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px'
   },
   tabGrid: {
     display: 'grid',

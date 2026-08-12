@@ -11,7 +11,6 @@ import {
   Package, 
   History,
   Trash2,
-  UserX,
   User,
   X
 } from 'lucide-react';
@@ -130,29 +129,6 @@ function AdminPaneli() {
     }
   };
 
-  // HESAP SİLME FONKSİYONU
-  const handleHesapSil = async () => {
-    const userId = localStorage.getItem('userId');
-    
-    if (!userId) {
-      alert('Oturum ID bilginiz bulunamadı. Lütfen bir kez çıkış yapıp tekrar giriş yapın.');
-      return;
-    }
-
-    const onay = window.confirm('Hesabınızı kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.');
-    if (!onay) return;
-
-    try {
-      await axios.delete(`${API_URL}/kullanicilar/${userId}`);
-      toast.success('Hesabınız başarıyla silindi.');
-      localStorage.clear();
-      window.location.href = '/login';
-    } catch (err) {
-      console.error('Hesap silme hatası:', err);
-      toast.error('Hesap silinirken sunucu hatası oluştu.');
-    }
-  };
-
   if (loading) {
     return (
       <div style={{ padding: '40px 16px', textAlign: 'center', color: '#64748b' }}>
@@ -182,13 +158,8 @@ function AdminPaneli() {
             <h2 style={styles.welcomeTitle}>
               Hoş Geldiniz, {yoneticiAdi}
             </h2>
-            
           </div>
         </div>
-
-        <button onClick={handleHesapSil} style={styles.deleteAccountBtn}>
-          <UserX size={12} /> Hesabımı Sil
-        </button>
       </div>
 
       {/* İSTATİSTİK GRID */}
@@ -232,14 +203,14 @@ function AdminPaneli() {
           onClick={() => setAktifMod('envanter')}
           style={{ ...styles.tabBtn, ...(aktifMod === 'envanter' ? styles.activeTabBtn : {}) }}
         >
-          <Package size={15} /> Demirbaşlar({demirbaslar.length})
+          <Package size={15} /> Demirbaşlar ({demirbaslar.length})
         </button>
 
         <button 
           onClick={() => setAktifMod('ekle')}
           style={{ ...styles.tabBtn, ...(aktifMod === 'ekle' ? styles.activeTabBtn : {}) }}
         >
-          <PlusCircle size={15} /> Yeni DemirbaşEkle
+          <PlusCircle size={15} /> Yeni Demirbaş Ekle
         </button>
 
         <button 
@@ -526,19 +497,6 @@ const styles = {
     color: '#64748b',
     fontWeight: '500',
     marginTop: '2px'
-  },
-  deleteAccountBtn: {
-    background: '#fef2f2',
-    color: '#dc2626',
-    border: '1px solid #fecaca',
-    padding: '7px 11px',
-    borderRadius: '8px',
-    fontSize: '0.72rem',
-    fontWeight: '700',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px'
   },
   statsGrid: {
     display: 'grid',

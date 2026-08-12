@@ -1,14 +1,17 @@
 /* eslint-disable no-unused-vars */
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
-import { ToastContainer } from 'react-toastify';
+import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import axios from 'axios';
 
 import Login from './pages/Login';
 import PersonelPaneli from './pages/PersonelPaneli';
 import AdminPaneli from './pages/AdminPaneli';
 import DemirbasDetay from './pages/DemirbasDetay';
-import { Menu, X, LogOut, UserCheck, Shield } from 'lucide-react';
+import { Menu, X, LogOut, UserCheck, Shield, UserX } from 'lucide-react';
+
+const API_URL = 'https://demirbas-ariza-takip.onrender.com/api';
 
 function AppRoutes({ role, setRole }) {
   const navigate = useNavigate();
@@ -43,11 +46,33 @@ function App() {
     setSidebarAcik(false);
   };
 
+  // HESAP SİLME FONKSİYONU
+  const handleHesapSil = async () => {
+    const userId = localStorage.getItem('userId');
+
+    if (!userId) {
+      alert('Oturum ID bilginiz bulunamadı. Lütfen bir kez çıkış yapıp tekrar giriş yapın.');
+      return;
+    }
+
+    const onay = window.confirm('Hesabınızı kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.');
+    if (!onay) return;
+
+    try {
+      await axios.delete(`${API_URL}/kullanicilar/${userId}`);
+      toast.success('Hesabınız başarıyla silindi.');
+      handleLogout();
+    } catch (err) {
+      console.error('Hesap silme hatası:', err);
+      toast.error('Hesap silinirken sunucu hatası oluştu.');
+    }
+  };
+
   return (
     <Router>
       <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
         
-        {/* SADE VE NET ÜST BAR */}
+        {/* ÜST BAR */}
         <header style={styles.header}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             {role && (
@@ -105,10 +130,16 @@ function App() {
                   </Link>
                 )}
 
-                {/* ÇIKIŞ YAP BUTONU METNİ VE İKONU İLE NETLEŞTİRİLDİ */}
+                {/* ÇIKIŞ YAP BUTONU */}
                 <button onClick={handleLogout} style={styles.logoutBtn}>
                   <LogOut size={18} />
                   <span>Çıkış Yap</span>
+                </button>
+
+                {/* HESABIMI SİL BUTONU (ÇIKIŞ YAP İLE BİREBİR AYNI STİLDE) */}
+                <button onClick={handleHesapSil} style={styles.deleteAccountBtn}>
+                  <UserX size={18} />
+                  <span>Hesabımı Sil</span>
                 </button>
               </div>
             </div>
@@ -184,7 +215,7 @@ const styles = {
     padding: '16px',
     borderBottom: '1px solid #f1f5f9',
     display: 'flex',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center'
   },
   closeBtn: {
@@ -225,6 +256,19 @@ const styles = {
     fontSize: '0.88rem',
     cursor: 'pointer',
     marginTop: '16px'
+  },
+  deleteAccountBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    backgroundColor: '#fef2f2',
+    color: '#dc2626',
+    border: '1px solid #fecaca',
+    fontWeight: '700',
+    fontSize: '0.88rem',
+    cursor: 'pointer'
   }
 };
 

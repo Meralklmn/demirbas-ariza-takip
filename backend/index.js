@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const QRCode = require('qrcode');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -13,7 +12,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// 'uploads' klasörü yoksa otomatik oluştur (Multer hatası almamak için)
+// 'uploads' klasörünü otomatik oluştur
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
@@ -48,7 +47,7 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       qr_kod VARCHAR(20) UNIQUE NOT NULL,
       ad VARCHAR(100) NOT NULL,
-      kategori VARCHAR(50) NOT NULL,
+      kategori VARCHAR(50),
       birim VARCHAR(100),
       konum VARCHAR(150),
       alim_tarihi DATE,
@@ -57,13 +56,14 @@ db.serialize(() => {
     )
   `);
 
-  // Arızalar Tablosu
+  // Arızalar Tablosu (bildiren_tc sütunlu)
   db.run(`
     CREATE TABLE IF NOT EXISTS arizalar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       demirbas_id INTEGER NOT NULL,
       aciklama TEXT NOT NULL,
       bildiren_kisi VARCHAR(100),
+      bildiren_tc VARCHAR(11),
       bildirim_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       fotograf_url VARCHAR(255),
       durum VARCHAR(20) DEFAULT 'Açık',
@@ -74,7 +74,7 @@ db.serialize(() => {
   `);
 });
 
-// 3. Statik Klasör Servisi ve Multer
+// Statik Dosya Servisi ve Multer Yapılandırması
 app.use('/uploads', express.static(uploadsDir));
 
 const storage = multer.diskStorage({
@@ -84,8 +84,6 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // --- API ENDPOINTLARI ---
-
-// A) KULLANICI / LOGIN / REGISTER
 
 // Kayıt Ol
 app.post('/api/register', (req, res) => {
@@ -145,7 +143,7 @@ app.post('/api/login', (req, res) => {
   });
 });
 
-// Kullanıcı Hesabını Silme API'si
+// Kullanıcı Hesabını Sil
 app.delete('/api/kullanicilar/:id', (req, res) => {
   const { id } = req.params;
   const sql = 'DELETE FROM kullanicilar WHERE id = ?';
@@ -159,51 +157,13 @@ app.delete('/api/kullanicilar/:id', (req, res) => {
   });
 });
 
-// Bozuk ve Gereksiz Kayıtları Temizleme API'si (SQLITE DÜZELTİLDİ)
-// TÜM TABLOLARDAKİ BOZUK VERİLERİ TEMİZLEME API'Sİ
-app.get('/api/temizle-bozuk-kullanicilar', (req, res) => {
-  // 1. Bozuk Kullanıcıları Sil
-  const sqlKullanici = `
-    DELETE FROM kullanicilar 
-    WHERE ad_soyad IS NULL 
-       OR ad_soyad = 'undefined' 
-       OR ad_soyad = 'isimsiz' 
-       OR ad_soyad = '' 
-       OR tc_no IS NULL 
-       OR tc_no = 'undefined' 
-       OR tc_no = '';
-  `;
-
-  // 2. Bozuk/Test Arıza Kayıtlarını Sil
-  const sqlAriza = `
-    DELETE FROM arizalar 
-    WHERE bildiren_kisi IS NULL 
-       OR bildiren_kisi = 'undefined' 
-       OR bildiren_kisi = 'isimsiz'
-       OR aciklama = 'undefined';
-  `;
-
-  db.run(sqlKullanici, [], function (err1) {
-    if (err1) console.error('Kullanıcı temizleme hatası:', err1.message);
-    
-    db.run(sqlAriza, [], function (err2) {
-      if (err2) console.error('Arıza temizleme hatası:', err2.message);
-      
-      res.json({ 
-        message: 'Tüm tablolardaki bozuk kayıtlar temizlendi!', 
-        silinen_kullanici: this.changes 
-      });
-    });
-  });
-});
-
-// B) DEMİRBAŞ İŞLEMLERİ
+// DEMİRBAŞ İŞLEMLERİ
 
 // Tüm Demirbaşları Getir
 app.get('/api/demirbaslar', (req, res) => {
   db.all('SELECT * FROM demirbaslar ORDER BY id DESC', [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+    res.json(rows || []);
   });
 });
 
@@ -216,41 +176,20 @@ app.get('/api/demirbaslar/:id', (req, res) => {
   });
 });
 
-// Yeni Demirbaş Ekle & QR Oluştur
-app.post('/api/demirbaslar', async (req, res) => {
+// Yeni Demirbaş Ekle (QR'sız Sade Yapı)
+app.post('/api/demirbaslar', (req, res) => {
   const { qr_kod, ad, kategori, birim, konum, alim_tarihi } = req.body;
   const sql = `INSERT INTO demirbaslar (qr_kod, ad, kategori, birim, konum, alim_tarihi) VALUES (?, ?, ?, ?, ?, ?)`;
   
-  db.run(sql, [qr_kod, ad, kategori, birim, konum, alim_tarihi], async function (err) {
+  db.run(sql, [qr_kod, ad, kategori, birim, konum, alim_tarihi], function (err) {
     if (err) {
       if (err.message.includes('UNIQUE constraint failed')) {
-        return res.status(400).json({ error: 'Bu QR / Barkod Kodu zaten kullanılıyor.' });
+        return res.status(400).json({ error: 'Bu Demirbaş/Seri Kodu zaten kullanılıyor.' });
       }
       return res.status(400).json({ error: err.message });
     }
 
-    const demirbasId = this.lastID;
-    const targetUrl = `https://demirbas-ariza-takip.onrender.com/demirbas/${demirbasId}`;
-    try {
-      const qrDataUrl = await QRCode.toDataURL(targetUrl);
-      res.json({ id: demirbasId, qr_kod, ad, kategori, birim, konum, alim_tarihi, targetUrl, qrDataUrl });
-    } catch (qrErr) {
-      res.status(500).json({ error: 'QR kod oluşturulamadı.' });
-    }
-  });
-});
-
-// Kayıtlı Demirbaşın QR Kodunu Tekrar Çağır
-app.get('/api/demirbaslar/:id/qr', async (req, res) => {
-  db.get('SELECT * FROM demirbaslar WHERE id = ?', [req.params.id], async (err, row) => {
-    if (err || !row) return res.status(404).json({ error: 'Demirbaş bulunamadı' });
-    const targetUrl = `https://demirbas-ariza-takip.onrender.com/demirbas/${row.id}`;
-    try {
-      const qrDataUrl = await QRCode.toDataURL(targetUrl);
-      res.json({ id: row.id, ad: row.ad, qr_kod: row.qr_kod, qrDataUrl });
-    } catch (qrErr) {
-      res.status(500).json({ error: 'QR Kod üretilemedi' });
-    }
+    res.json({ id: this.lastID, qr_kod, ad, kategori, birim, konum, alim_tarihi });
   });
 });
 
@@ -266,31 +205,32 @@ app.delete('/api/demirbaslar/:id', (req, res) => {
   });
 });
 
-// C) ARIZA İŞLEMLERİ
+// ARIZA İŞLEMLERİ
 
 // Tüm Arızaları Getir
 app.get('/api/arizalar', (req, res) => {
   const sql = `
     SELECT arizalar.*, demirbaslar.ad as demirbas_adi, demirbaslar.qr_kod 
     FROM arizalar 
-    JOIN demirbaslar ON arizalar.demirbas_id = demirbaslar.id 
+    LEFT JOIN demirbaslar ON arizalar.demirbas_id = demirbaslar.id 
     ORDER BY arizalar.id DESC
   `;
   db.all(sql, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+    res.json(rows || []);
   });
 });
 
-// Arıza Kaydı Oluştur
-app.post('/api/arizalar', upload.single('fotograf'), (req, res) => {
-  const { demirbas_id, aciklama, bildiren_kisi } = req.body;
+// Arıza Kaydı Oluştur (Hem 'resim' hem 'fotograf' kabul eder)
+app.post('/api/arizalar', upload.single('resim'), (req, res) => {
+  const { demirbas_id, aciklama, bildiren_kisi, bildiren_tc } = req.body;
   const fotograf_url = req.file ? `/uploads/${req.file.filename}` : null;
-  const sql = `INSERT INTO arizalar (demirbas_id, aciklama, bildiren_kisi, fotograf_url) VALUES (?, ?, ?, ?)`;
   
-  db.run(sql, [demirbas_id, aciklama, bildiren_kisi, fotograf_url], function (err) {
+  const sql = `INSERT INTO arizalar (demirbas_id, aciklama, bildiren_kisi, bildiren_tc, fotograf_url) VALUES (?, ?, ?, ?, ?)`;
+  
+  db.run(sql, [demirbas_id, aciklama, bildiren_kisi, bildiren_tc, fotograf_url], function (err) {
     if (err) return res.status(400).json({ error: err.message });
-    res.json({ id: this.lastID, message: 'Arıza kaydı oluşturuldu.' });
+    res.json({ id: this.lastID, message: 'Arıza kaydı başarıyla oluşturuldu.' });
   });
 });
 
