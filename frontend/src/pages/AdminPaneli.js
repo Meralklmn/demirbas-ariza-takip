@@ -12,7 +12,8 @@ import {
   History,
   Trash2,
   User,
-  X
+  X,
+  FileText
 } from 'lucide-react';
 
 const API_URL = 'https://demirbas-ariza-takip.onrender.com/api';
@@ -72,7 +73,7 @@ function AdminPaneli() {
     return ad.includes(arama) || birim.includes(arama) || kod.includes(arama);
   });
 
-  // YENİ DEMİRBAŞ EKLEME (Tamamen QR'sız)
+  // YENİ DEMİRBAŞ EKLEME
   const handleDemirbasEkle = async (e) => {
     e.preventDefault();
     try {
@@ -412,6 +413,33 @@ function AdminPaneli() {
               <div style={{ marginTop: '10px', fontSize: '0.8rem', fontWeight: '700', color: '#334155' }}>
                 Toplam Arıza Kaydı: {seciliCihazGecmisi.length}
               </div>
+
+              {/* SORGULANAN CİHAZIN ARIZA GEÇMİŞİ VE TEKNİK BİRİM NOTLARI */}
+              {seciliCihazGecmisi.length > 0 && (
+                <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {seciliCihazGecmisi.map(ag => (
+                    <div key={ag.id} style={{ background: '#ffffff', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: '700' }}>
+                        <span>Bildiren: {ag.bildiren_kisi || 'Bilinmiyor'}</span>
+                        <span style={{ color: ag.durum === 'Çözüldü' ? '#16a34a' : ag.durum === 'İşlemde' ? '#0284c7' : '#b45309' }}>
+                          {ag.durum || 'Beklemede'}
+                        </span>
+                      </div>
+                      <p style={{ margin: '4px 0', fontSize: '0.8rem', color: '#334155' }}>{ag.aciklama}</p>
+                      
+                      {/* ÇÖZÜM / TEKNİK BİRİM NOTU */}
+                      {ag.cozum_notu && (
+                        <div style={styles.cozumNotuKutusu}>
+                          <div style={{ fontWeight: '800', color: '#0369a1', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <FileText size={12} /> Teknik Birim Notu:
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: '#0f172a', marginTop: '2px' }}>{ag.cozum_notu}</div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -447,6 +475,23 @@ function AdminPaneli() {
                 </div>
 
                 <p style={{ margin: '8px 0', fontSize: '0.82rem', color: '#334155' }}>{a.aciklama}</p>
+
+                {/* EKLENEN KISIM: TEKNİK BİRİM / ÇÖZÜM NOTU GÖSTERİMİ */}
+                {a.cozum_notu && (
+                  <div style={styles.cozumNotuKutusu}>
+                    <div style={{ fontWeight: '800', color: '#0369a1', fontSize: '0.73rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <FileText size={13} /> Teknik Birim Notu:
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: '#0f172a', marginTop: '2px', fontWeight: '500' }}>
+                      {a.cozum_notu}
+                    </div>
+                    {a.cozum_tarihi && (
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '4px' }}>
+                        İşlem Tarihi: {new Date(a.cozum_tarihi).toLocaleString('tr-TR')}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div style={styles.actionRow}>
                   <button onClick={() => handleDurumGuncelle(a.id, 'İşlemde')} style={styles.btnProcessMobile}>
@@ -549,6 +594,14 @@ const styles = {
     borderRadius: '12px',
     border: '1px solid #e2e8f0',
     boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+  },
+  cozumNotuKutusu: {
+    background: '#f0f9ff',
+    borderLeft: '3px solid #0284c7',
+    padding: '8px 10px',
+    borderRadius: '6px',
+    marginTop: '8px',
+    marginBottom: '4px'
   },
   actionRow: {
     display: 'flex',
