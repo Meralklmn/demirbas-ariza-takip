@@ -18,13 +18,15 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-// 1. Veritabanı Bağlantısı
+// 1. Veritabanı Bağlantısı ve Foreign Key Desteği
 const dbPath = path.resolve(__dirname, 'database.sqlite');
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('❌ Veritabanı Hatası:', err.message);
   } else {
     console.log('✅ SQLite veritabanına başarıyla bağlandı.');
+    // Foreign Key kısıtlamalarını aktif et
+    db.run('PRAGMA foreign_keys = ON;');
   }
 });
 
@@ -56,7 +58,7 @@ db.serialize(() => {
     )
   `);
 
-  // Arızalar Tablosu (bildiren_tc sütunlu)
+  // Arızalar Tablosu
   db.run(`
     CREATE TABLE IF NOT EXISTS arizalar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +71,7 @@ db.serialize(() => {
       durum VARCHAR(20) DEFAULT 'Açık',
       cozum_notu TEXT,
       cozum_tarihi TIMESTAMP,
-      FOREIGN KEY (demirbas_id) REFERENCES demirbaslar(id)
+      FOREIGN KEY (demirbas_id) REFERENCES demirbaslar(id) ON DELETE CASCADE
     )
   `);
 });
@@ -84,6 +86,8 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // --- API ENDPOINTLARI ---
+
+// A) KULLANICI İŞLEMLERİ
 
 // Kayıt Ol
 app.post('/api/register', (req, res) => {
@@ -157,7 +161,7 @@ app.delete('/api/kullanicilar/:id', (req, res) => {
   });
 });
 
-// DEMİRBAŞ İŞLEMLERİ
+// B) DEMİRBAŞ İŞLEMLERİ
 
 // Tüm Demirbaşları Getir
 app.get('/api/demirbaslar', (req, res) => {
@@ -176,7 +180,7 @@ app.get('/api/demirbaslar/:id', (req, res) => {
   });
 });
 
-// Yeni Demirbaş Ekle (QR'sız Sade Yapı)
+// Yeni Demirbaş Ekle
 app.post('/api/demirbaslar', (req, res) => {
   const { qr_kod, ad, kategori, birim, konum, alim_tarihi } = req.body;
   const sql = `INSERT INTO demirbaslar (qr_kod, ad, kategori, birim, konum, alim_tarihi) VALUES (?, ?, ?, ?, ?, ?)`;
@@ -205,7 +209,7 @@ app.delete('/api/demirbaslar/:id', (req, res) => {
   });
 });
 
-// ARIZA İŞLEMLERİ
+// C) ARIZA İŞLEMLERİ
 
 // Tüm Arızaları Getir
 app.get('/api/arizalar', (req, res) => {
@@ -221,10 +225,12 @@ app.get('/api/arizalar', (req, res) => {
   });
 });
 
-// Arıza Kaydı Oluştur (Hem 'resim' hem 'fotograf' kabul eder)
+// Arıza Kaydı Oluştur (Hem 'resim' hem 'fotograf' alan adı ile gelen yüklemeleri destekler)
 app.post('/api/arizalar', upload.single('resim'), (req, res) => {
   const { demirbas_id, aciklama, bildiren_kisi, bildiren_tc } = req.body;
-  const fotograf_url = req.file ? `/uploads/${req.file.filename}` : null;
+  
+  // Resim seçilmediyse null döner, çökme yaşanmaz
+  const fotograf_url = (req.file && req.file.filename) ? `/uploads/${req.file.filename}` : null;
   
   const sql = `INSERT INTO arizalar (demirbas_id, aciklama, bildiren_kisi, bildiren_tc, fotograf_url) VALUES (?, ?, ?, ?, ?)`;
   
@@ -243,6 +249,17 @@ app.put('/api/arizalar/:id', (req, res) => {
   db.run(sql, [durum, cozum_notu, cozum_tarihi, req.params.id], function (err) {
     if (err) return res.status(400).json({ error: err.message });
     res.json({ message: 'Arıza durumu güncellendi.' });
+  });
+});
+
+// Arıza Kaydını Sil (Eklenen yeni endpoint)
+app.delete('/api/arizalar/:id', (req, res) => {
+  const { id } = req.params;
+  const sql = 'DELETE FROM arizalar WHERE id = ?';
+
+  db.run(sql, [id], function (err) {
+    if (err) return res.status(500).json({ error: 'Arıza kaydı silinirken bir hata oluştu.' });
+    res.json({ message: 'Arıza kaydı başarıyla silindi.' });
   });
 });
 

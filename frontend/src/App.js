@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
+// BrowserRouter YERİNE HashRouter İÇE AKTARILDI
+import { HashRouter as Router, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import axios from 'axios';
@@ -27,11 +28,12 @@ function AppRoutes({ role, setRole }) {
 
   return (
     <Routes>
+      <Route path="/" element={<Login onLogin={handleLoginSuccess} />} />
       <Route path="/login" element={<Login onLogin={handleLoginSuccess} />} />
-      <Route path="/personel" element={role === 'personel' || role === 'admin' ? <PersonelPaneli /> : <Navigate to="/login" />} />
-      <Route path="/admin" element={role === 'admin' ? <AdminPaneli /> : <Navigate to="/login" />} />
+      <Route path="/personel" element={role === 'personel' || role === 'admin' ? <PersonelPaneli /> : <Navigate to="/login" replace />} />
+      <Route path="/admin" element={role === 'admin' ? <AdminPaneli /> : <Navigate to="/login" replace />} />
       <Route path="/demirbas/:id" element={<DemirbasDetay />} />
-      <Route path="*" element={<Navigate to={role ? (role === 'admin' ? '/admin' : '/personel') : '/login'} />} />
+      <Route path="*" element={<Navigate to={role ? (role === 'admin' ? '/admin' : '/personel') : '/login'} replace />} />
     </Routes>
   );
 }
@@ -136,7 +138,7 @@ function App() {
                   <span>Çıkış Yap</span>
                 </button>
 
-                {/* HESABIMI SİL BUTONU (ÇIKIŞ YAP İLE BİREBİR AYNI STİLDE) */}
+                {/* HESABIMI SİL BUTONU */}
                 <button onClick={handleHesapSil} style={styles.deleteAccountBtn}>
                   <UserX size={18} />
                   <span>Hesabımı Sil</span>
