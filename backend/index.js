@@ -85,6 +85,11 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
+// Kök Rota & Sağlık Kontrolü (Render Cold-Start Kontrolü İçin)
+app.get('/', (req, res) => {
+  res.json({ message: 'Demirbaş & Arıza Takip API Canlı ve Çalışıyor 🚀' });
+});
+
 // --- API ENDPOINTLARI ---
 
 // A) KULLANICI İŞLEMLERİ
@@ -229,7 +234,6 @@ app.get('/api/arizalar', (req, res) => {
 app.post('/api/arizalar', upload.single('resim'), (req, res) => {
   const { demirbas_id, aciklama, bildiren_kisi, bildiren_tc } = req.body;
   
-  // Resim seçilmediyse null döner, çökme yaşanmaz
   const fotograf_url = (req.file && req.file.filename) ? `/uploads/${req.file.filename}` : null;
   
   const sql = `INSERT INTO arizalar (demirbas_id, aciklama, bildiren_kisi, bildiren_tc, fotograf_url) VALUES (?, ?, ?, ?, ?)`;
@@ -252,7 +256,7 @@ app.put('/api/arizalar/:id', (req, res) => {
   });
 });
 
-// Arıza Kaydını Sil (Eklenen yeni endpoint)
+// Arıza Kaydını Sil
 app.delete('/api/arizalar/:id', (req, res) => {
   const { id } = req.params;
   const sql = 'DELETE FROM arizalar WHERE id = ?';
@@ -263,7 +267,12 @@ app.delete('/api/arizalar/:id', (req, res) => {
   });
 });
 
+// 404 / Hatalı GET İSTEKLERİ İÇİN YAKALAYICI (Hataların Tam Önüne Geçer)
+app.use((req, res) => {
+  res.status(404).json({ error: `Aradığınız yol (${req.originalUrl}) bulunamadı veya hatalı HTTP metodu kullanıldı.` });
+});
+
 // Sunucuyu Dinleme
 app.listen(PORT, () => {
-  console.log(` Sunucu http://localhost:${PORT} adresinde CANLI dinliyor...`);
+  console.log(`🚀 Sunucu http://localhost:${PORT} adresinde CANLI dinliyor...`);
 });
