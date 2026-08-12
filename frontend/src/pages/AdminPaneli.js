@@ -1,7 +1,6 @@
 /* eslint-disable no-unused-vars */
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Html5QrcodeScanner } from 'html5-qrcode';
 import { toast } from 'react-toastify';
 import { 
   Search, 
@@ -10,15 +9,11 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   Package, 
-  QrCode, 
-  ListFilter, 
-  Camera, 
   History,
-  Download,
-  X,
   Trash2,
   UserX,
-  User
+  User,
+  X
 } from 'lucide-react';
 
 const API_URL = 'https://demirbas-ariza-takip.onrender.com/api';
@@ -28,7 +23,6 @@ function AdminPaneli() {
   const [arizalar, setArizalar] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Giriş yapan yöneticinin adı
   const [yoneticiAdi, setYoneticiAdi] = useState('');
 
   // AKTİF MOD ('envanter' | 'ekle' | 'sorgula' | 'arizalar')
@@ -38,10 +32,8 @@ function AdminPaneli() {
     qr_kod: '', ad: '', kategori: '', birim: '', konum: '', alim_tarihi: '' 
   });
 
-  const [secimYontemi, setSecimYontemi] = useState('qr');
   const [secilenDemirbasId, setSecilenDemirbasId] = useState('');
-  const [kameraAcik, setKameraAcik] = useState(false);
-  const [aktifQR, setAktifQR] = useState(null);
+  const [aramaMetni, setAramaMetni] = useState('');
 
   useEffect(() => {
     const kayitliAd = localStorage.getItem('userName') || 'Yönetici';
@@ -70,85 +62,37 @@ function AdminPaneli() {
     verileriGetir();
   }, [verileriGetir]);
 
-  // QR KOD OKUYUCU
-  useEffect(() => {
-    let scanner = null;
-    if (aktifMod === 'sorgula' && secimYontemi === 'qr' && kameraAcik) {
-      scanner = new Html5QrcodeScanner(
-        "admin-qr-reader",
-        { fps: 10, qrbox: { width: 200, height: 200 } },
-        false
-      );
+  // Türkçe Karakter Uyumlu Anlık Arama
+  const filtrelenmisDemirbaslar = demirbaslar.filter((d) => {
+    if (!aramaMetni.trim()) return true;
+    const arama = aramaMetni.toLocaleLowerCase('tr-TR').trim();
+    const ad = (d.ad || '').toLocaleLowerCase('tr-TR');
+    const birim = (d.birim || '').toLocaleLowerCase('tr-TR');
+    const kod = (d.qr_kod || d.id || '').toString().toLocaleLowerCase('tr-TR');
 
-      scanner.render(
-        (decodedText) => {
-          let okunanQR = decodedText.trim();
-          if (okunanQR.includes('/demirbas/')) {
-            const parts = okunanQR.split('/demirbas/');
-            setSecilenDemirbasId(parts[parts.length - 1]);
-            toast.success('Demirbaş QR doğrulandı.');
-          } else {
-            const eslesen = demirbaslar.find(d => d.qr_kod === okunanQR || d.id.toString() === okunanQR);
-            if (eslesen) {
-              setSecilenDemirbasId(eslesen.id.toString());
-              toast.success(`${eslesen.ad} bulundu.`);
-            } else {
-              toast.error(`"${okunanQR}" QR koduna ait demirbaş bulunamadı.`);
-            }
-          }
-          scanner.clear();
-          setKameraAcik(false);
-        },
-        () => {}
-      );
-    }
+    return ad.includes(arama) || birim.includes(arama) || kod.includes(arama);
+  });
 
-    return () => {
-      if (scanner) {
-        scanner.clear().catch(e => console.error(e));
-      }
-    };
-  }, [kameraAcik, secimYontemi, demirbaslar, aktifMod]);
-
-  const handleYontemChange = (yontem) => {
-    setSecimYontemi(yontem);
-    setSecilenDemirbasId('');
-    setKameraAcik(false);
-  };
-
-  // YENİ DEMİRBAŞ EKLEME
+  // YENİ DEMİRBAŞ EKLEME (Tamamen QR'sız)
   const handleDemirbasEkle = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(`${API_URL}/demirbaslar`, yeniDemirbas);
+      await axios.post(`${API_URL}/demirbaslar`, {
+        qr_kod: yeniDemirbas.qr_kod,
+        ad: yeniDemirbas.ad,
+        kategori: yeniDemirbas.kategori,
+        birim: yeniDemirbas.birim,
+        konum: yeniDemirbas.konum,
+        alim_tarihi: yeniDemirbas.alim_tarihi
+      });
+
       toast.success(`${yeniDemirbas.ad} envantere eklendi!`);
       setYeniDemirbas({ qr_kod: '', ad: '', kategori: '', birim: '', konum: '', alim_tarihi: '' });
-      
-      if (res.data && res.data.qrDataUrl) {
-        setAktifQR({
-          ad: res.data.ad,
-          qr_kod: res.data.qr_kod,
-          qrDataUrl: res.data.qrDataUrl
-        });
-      }
-
+      setAktifMod('envanter');
       verileriGetir();
     } catch (err) {
       console.error('Ekleme hatası:', err);
       toast.error('Demirbaş eklenirken bir hata oluştu.');
-    }
-  };
-
-  // QR KOD ÇEKME
-  const handleQRGoster = async (id) => {
-    try {
-      const res = await axios.get(`${API_URL}/demirbaslar/${id}/qr`);
-      if (res.data) {
-        setAktifQR(res.data);
-      }
-    } catch (err) {
-      console.error('QR getirilemedi:', err);
-      toast.error('QR Kod yüklenemedi.');
     }
   };
 
@@ -209,35 +153,6 @@ function AdminPaneli() {
     }
   };
 
-  // MOBİL UYUMLU QR İNDİRME
-  const handleQRDownload = () => {
-    if (!aktifQR || !aktifQR.qrDataUrl) return;
-
-    const newWin = window.open('', '_blank');
-    if (newWin) {
-      newWin.document.write(`
-        <html>
-          <head>
-            <title>${aktifQR.ad} - QR Kod</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          </head>
-          <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; margin:0; background:#f8fafc; font-family:sans-serif; text-align:center; padding:20px;">
-            <h3 style="color:#0f172a; margin-bottom:6px;">${aktifQR.ad}</h3>
-            <p style="color:#64748b; font-size:13px; margin-bottom:16px;">Görsele basılı tutarak telefonunuza kaydedebilirsiniz.</p>
-            <img src="${aktifQR.qrDataUrl}" alt="${aktifQR.ad} QR" style="max-width:85%; height:auto; border:1px solid #cbd5e1; border-radius:12px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);" />
-          </body>
-        </html>
-      `);
-    } else {
-      const link = document.createElement('a');
-      link.href = aktifQR.qrDataUrl;
-      link.download = `QR_${aktifQR.qr_kod}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-  };
-
   if (loading) {
     return (
       <div style={{ padding: '40px 16px', textAlign: 'center', color: '#64748b' }}>
@@ -257,7 +172,7 @@ function AdminPaneli() {
   return (
     <div style={{ width: '100%', boxSizing: 'border-box' }}>
       
-      {/* HOŞ GELDİNİZ [AD SOYAD] KARTI */}
+      {/* KARŞILAMA KARTI */}
       <div style={styles.headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={styles.userAvatarIcon}>
@@ -267,15 +182,12 @@ function AdminPaneli() {
             <h2 style={styles.welcomeTitle}>
               Hoş Geldiniz, {yoneticiAdi}
             </h2>
-            <div style={styles.subTitleText}>
-              Trabzon Ortahisar Belediyesi • Yönetim Portalı
-            </div>
+            
           </div>
         </div>
 
-        {/* HESABIMI SİL BUTONU */}
         <button onClick={handleHesapSil} style={styles.deleteAccountBtn}>
-          <UserX size={14} /> Hesabımı Sil
+          <UserX size={12} /> Hesabımı Sil
         </button>
       </div>
 
@@ -320,21 +232,21 @@ function AdminPaneli() {
           onClick={() => setAktifMod('envanter')}
           style={{ ...styles.tabBtn, ...(aktifMod === 'envanter' ? styles.activeTabBtn : {}) }}
         >
-          <Package size={15} /> Envanter ({demirbaslar.length})
+          <Package size={15} /> Demirbaşlar({demirbaslar.length})
         </button>
 
         <button 
           onClick={() => setAktifMod('ekle')}
           style={{ ...styles.tabBtn, ...(aktifMod === 'ekle' ? styles.activeTabBtn : {}) }}
         >
-          <PlusCircle size={15} /> Yeni Ekle
+          <PlusCircle size={15} /> Yeni DemirbaşEkle
         </button>
 
         <button 
           onClick={() => setAktifMod('sorgula')}
           style={{ ...styles.tabBtn, ...(aktifMod === 'sorgula' ? styles.activeTabBtn : {}) }}
         >
-          <Search size={15} /> Sorgula
+          <Search size={15} /> Arıza Sorgula
         </button>
 
         <button 
@@ -348,10 +260,32 @@ function AdminPaneli() {
       {/* 1. MOD: ENVANTER */}
       {aktifMod === 'envanter' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {demirbaslar.length === 0 ? (
-            <div style={styles.emptyCard}>Envanterde kayıtlı demirbaş bulunamadı.</div>
+          
+          {/* Arama Kutusu */}
+          <div style={styles.searchBoxWrapper}>
+            <Search size={16} color="#64748b" style={{ marginLeft: '10px' }} />
+            <input
+              type="text"
+              placeholder="Envanterde demirbaş adı, kod veya birim ara..."
+              value={aramaMetni}
+              onChange={(e) => setAramaMetni(e.target.value)}
+              style={styles.searchInput}
+            />
+            {aramaMetni && (
+              <button 
+                type="button" 
+                onClick={() => setAramaMetni('')}
+                style={{ background: 'none', border: 'none', paddingRight: '10px', cursor: 'pointer', color: '#94a3b8' }}
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          {filtrelenmisDemirbaslar.length === 0 ? (
+            <div style={styles.emptyCard}>Aramanıza uygun demirbaş bulunamadı.</div>
           ) : (
-            demirbaslar.map(d => {
+            filtrelenmisDemirbaslar.map(d => {
               const arizaSayisi = arizalar.filter(a => a.demirbas_id?.toString() === d.id.toString()).length;
               return (
                 <div key={d.id} style={styles.itemCard}>
@@ -359,7 +293,7 @@ function AdminPaneli() {
                     <div>
                       <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.92rem' }}>{d.ad}</div>
                       <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
-                        QR: <strong>{d.qr_kod}</strong> | Birim: {d.birim || 'Genel'}
+                        Demirbaş Kodu: <strong>{d.qr_kod || d.id}</strong> | Birim: {d.birim || 'Genel'}
                       </div>
                     </div>
                     <span style={{
@@ -375,11 +309,8 @@ function AdminPaneli() {
                   </div>
 
                   <div style={styles.actionRow}>
-                    <button onClick={() => handleQRGoster(d.id)} style={styles.btnQrMobile}>
-                      <QrCode size={13} /> QR İndir
-                    </button>
                     <button onClick={() => handleDemirbasSil(d.id, d.ad)} style={styles.btnDeleteMobile}>
-                      <Trash2 size={13} /> Sil
+                      <Trash2 size={13} /> Envanterden Sil
                     </button>
                   </div>
                 </div>
@@ -395,9 +326,9 @@ function AdminPaneli() {
           <h3 style={styles.cardTitle}>Yeni Demirbaş Ekle</h3>
           <form onSubmit={handleDemirbasEkle} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
             <div>
-              <label style={styles.label}>QR / Barkod Kodu</label>
+              <label style={styles.label}>Demirbaş Kodu / Seri No</label>
               <input 
-                placeholder="Örn: D-101" 
+                placeholder="Örn: DMR-101" 
                 value={yeniDemirbas.qr_kod} 
                 onChange={e => setYeniDemirbas({...yeniDemirbas, qr_kod: e.target.value})} 
                 required 
@@ -438,7 +369,7 @@ function AdminPaneli() {
             </div>
 
             <button type="submit" style={styles.submitBtn}>
-              <PlusCircle size={16} /> Demirbaşı Kaydet ve QR Üret
+              <PlusCircle size={16} /> Demirbaşı Kaydet
             </button>
           </form>
         </div>
@@ -449,62 +380,64 @@ function AdminPaneli() {
         <div style={styles.card}>
           <h3 style={styles.cardTitle}>Demirbaş Sorgula</h3>
           
-          <div style={styles.subTabGrid}>
-            <button
-              type="button"
-              onClick={() => handleYontemChange('qr')}
-              style={{ ...styles.subTabBtn, ...(secimYontemi === 'qr' ? styles.activeSubTab : {}) }}
-            >
-              <QrCode size={14} /> QR Okut
-            </button>
-            <button
-              type="button"
-              onClick={() => handleYontemChange('manual')}
-              style={{ ...styles.subTabBtn, ...(secimYontemi === 'manual' ? styles.activeSubTab : {}) }}
-            >
-              <ListFilter size={14} /> Listeden Seç
-            </button>
-          </div>
+          <div style={{ marginTop: '12px' }}>
+            <label style={styles.label}>DEMİRBAŞ ARA VE SEÇ:</label>
+            
+            {/* Arama Kutusu */}
+            <div style={styles.searchBoxWrapper}>
+              <Search size={16} color="#64748b" style={{ marginLeft: '10px' }} />
+              <input
+                type="text"
+                placeholder="Cihaz adı, kod veya birim yazın..."
+                value={aramaMetni}
+                onChange={(e) => setAramaMetni(e.target.value)}
+                style={styles.searchInput}
+              />
+              {aramaMetni && (
+                <button 
+                  type="button" 
+                  onClick={() => setAramaMetni('')}
+                  style={{ background: 'none', border: 'none', paddingRight: '10px', cursor: 'pointer', color: '#94a3b8' }}
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
 
-          {secimYontemi === 'qr' && (
-            <div style={{ marginTop: '12px' }}>
-              <button 
-                type="button" 
-                onClick={() => setKameraAcik(!kameraAcik)}
-                style={{ ...styles.cameraBtn, background: kameraAcik ? '#ef4444' : '#0f172a' }}
-              >
-                <Camera size={16} /> {kameraAcik ? 'Kamerayı Kapat' : 'Cihaz QR Kodunu Okut'}
-              </button>
-
-              {kameraAcik && (
-                <div style={{ marginTop: '10px', background: '#ffffff', padding: '8px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
-                  <div id="admin-qr-reader" style={{ width: '100%' }}></div>
+            {/* Tıklanabilir Süzülen Liste */}
+            <div style={styles.listContainer}>
+              {filtrelenmisDemirbaslar.length > 0 ? (
+                filtrelenmisDemirbaslar.map((d) => {
+                  const seciliMi = secilenDemirbasId.toString() === d.id.toString();
+                  return (
+                    <div
+                      key={d.id}
+                      onClick={() => setSecilenDemirbasId(d.id.toString())}
+                      style={{
+                        ...styles.listItem,
+                        backgroundColor: seciliMi ? '#e0f2fe' : '#ffffff',
+                        borderLeft: seciliMi ? '4px solid #0284c7' : 'none'
+                      }}
+                    >
+                      <div style={{ fontWeight: '700', fontSize: '0.85rem', color: '#0f172a' }}>{d.ad}</div>
+                      <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '2px' }}>
+                        Kod: {d.qr_kod || d.id} | Birim: {d.birim || 'Genel'}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{ padding: '12px', fontSize: '0.8rem', color: '#94a3b8', textAlign: 'center' }}>
+                  Aramanıza uygun demirbaş bulunamadı.
                 </div>
               )}
             </div>
-          )}
-
-          {secimYontemi === 'manual' && (
-            <div style={{ marginTop: '12px' }}>
-              <select 
-                value={secilenDemirbasId} 
-                onChange={(e) => setSecilenDemirbasId(e.target.value)} 
-                style={styles.mobileSelect}
-              >
-                <option value="">-- Cihaz Seçin --</option>
-                {demirbaslar.map(d => (
-                  <option key={d.id} value={d.id}>
-                    {d.ad} (QR: {d.qr_kod})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          </div>
 
           {seciliDemirbas && (
             <div style={styles.resultCard}>
               <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.95rem' }}>{seciliDemirbas.ad}</div>
-              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>QR: {seciliDemirbas.qr_kod} | Birim: {seciliDemirbas.birim || 'Genel'}</div>
+              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Kod: {seciliDemirbas.qr_kod || seciliDemirbas.id} | Birim: {seciliDemirbas.birim || 'Genel'}</div>
               <div style={{ marginTop: '10px', fontSize: '0.8rem', fontWeight: '700', color: '#334155' }}>
                 Toplam Arıza Kaydı: {seciliCihazGecmisi.length}
               </div>
@@ -555,29 +488,6 @@ function AdminPaneli() {
               </div>
             ))
           )}
-        </div>
-      )}
-
-      {/* POPUP QR MODAL */}
-      {aktifQR && (
-        <div style={styles.overlay}>
-          <div style={styles.modalContent}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <span style={{ fontWeight: '700', fontSize: '0.9rem', color: '#0f172a' }}>📱 Demirbaş QR Kodu</span>
-              <button onClick={() => setAktifQR(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
-                <X size={18} />
-              </button>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <img src={aktifQR.qrDataUrl} alt="QR Kod" style={{ width: '160px', height: '160px', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-              <div style={{ marginTop: '8px', fontWeight: '700', fontSize: '0.88rem', color: '#0f172a' }}>{aktifQR.ad}</div>
-              <div style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '12px' }}>Kod: {aktifQR.qr_kod}</div>
-              
-              <button onClick={handleQRDownload} style={{ ...styles.downloadBtn, border: 'none', width: '100%', justifyContent: 'center', cursor: 'pointer' }}>
-                <Download size={14} /> İndir / Kaydet
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
@@ -689,22 +599,8 @@ const styles = {
     borderTop: '1px solid #f1f5f9',
     paddingTop: '8px'
   },
-  btnQrMobile: {
-    flex: 1,
-    padding: '8px',
-    background: '#f1f5f9',
-    border: '1px solid #cbd5e1',
-    borderRadius: '8px',
-    fontSize: '0.75rem',
-    fontWeight: '700',
-    color: '#334155',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '4px'
-  },
   btnDeleteMobile: {
+    width: '100%',
     padding: '8px 12px',
     background: '#fef2f2',
     border: '1px solid #fecaca',
@@ -715,6 +611,7 @@ const styles = {
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: '4px'
   },
   btnProcessMobile: {
@@ -747,18 +644,40 @@ const styles = {
   },
   cardTitle: { margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' },
   label: { display: 'block', fontSize: '0.72rem', fontWeight: '700', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' },
+  searchBoxWrapper: {
+    display: 'flex',
+    alignItems: 'center',
+    border: '1px solid #cbd5e1',
+    borderRadius: '8px',
+    backgroundColor: '#f8fafc',
+    overflow: 'hidden'
+  },
+  searchInput: {
+    width: '100%',
+    padding: '10px 12px',
+    border: 'none',
+    outline: 'none',
+    fontSize: '0.85rem',
+    backgroundColor: 'transparent'
+  },
+  listContainer: {
+    maxHeight: '180px',
+    overflowY: 'auto',
+    border: '1px solid #cbd5e1',
+    borderRadius: '8px',
+    marginTop: '6px',
+    background: '#ffffff'
+  },
+  listItem: {
+    padding: '10px 12px',
+    borderBottom: '1px solid #f1f5f9',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s'
+  },
   mobileInput: { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem', outline: 'none', boxSizing: 'border-box' },
-  mobileSelect: { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem', outline: 'none' },
   submitBtn: { width: '100%', padding: '12px', background: '#800020', color: '#ffffff', border: 'none', borderRadius: '10px', fontWeight: '700', fontSize: '0.88rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '6px' },
-  subTabGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', background: '#f1f5f9', padding: '4px', borderRadius: '8px', marginTop: '8px' },
-  subTabBtn: { padding: '8px', border: 'none', background: 'transparent', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '600', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' },
-  activeSubTab: { background: '#ffffff', color: '#0f172a', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' },
-  cameraBtn: { width: '100%', padding: '10px', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '0.82rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' },
   resultCard: { background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', marginTop: '10px' },
-  emptyCard: { background: '#ffffff', padding: '24px', textAlign: 'center', borderRadius: '12px', color: '#94a3b8', fontSize: '0.85rem' },
-  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, padding: '16px' },
-  modalContent: { background: '#ffffff', padding: '20px', borderRadius: '16px', width: '100%', maxWidth: '300px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' },
-  downloadBtn: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: '#16a34a', color: '#ffffff', borderRadius: '8px', textDecoration: 'none', fontWeight: '700', fontSize: '0.8rem' }
+  emptyCard: { background: '#ffffff', padding: '24px', textAlign: 'center', borderRadius: '12px', color: '#94a3b8', fontSize: '0.85rem' }
 };
 
 export default AdminPaneli;

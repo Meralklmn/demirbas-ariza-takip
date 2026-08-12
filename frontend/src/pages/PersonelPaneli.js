@@ -1,20 +1,16 @@
 /* eslint-disable no-unused-vars */
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Html5QrcodeScanner } from 'html5-qrcode';
 import { toast } from 'react-toastify';
 import { 
   PlusCircle, 
   History, 
-  Camera, 
-  QrCode, 
-  ListFilter, 
-  Upload, 
   Clock, 
   User, 
-  CheckCircle2, 
   AlertCircle,
-  UserX
+  UserX,
+  Search,
+  X
 } from 'lucide-react';
 
 const BASE_URL = 'https://demirbas-ariza-takip.onrender.com';
@@ -28,11 +24,10 @@ function PersonelPaneli() {
   const [personelTc, setPersonelTc] = useState('');
 
   const [aktifSekme, setAktifSekme] = useState('yeni_ariza');
-  const [secimYontemi, setSecimYontemi] = useState('qr');
   const [secilenDemirbasId, setSecilenDemirbasId] = useState('');
+  const [aramaMetni, setAramaMetni] = useState('');
   const [aciklama, setAciklama] = useState('');
   const [resim, setResim] = useState(null);
-  const [kameraAcik, setKameraAcik] = useState(false);
   const [gonderiliyor, setGonderiliyor] = useState(false);
 
   useEffect(() => {
@@ -73,58 +68,23 @@ function PersonelPaneli() {
     verileriGetir();
   }, [verileriGetir]);
 
-  // QR KOD TARAYICI
-  useEffect(() => {
-    let scanner = null;
-    if (aktifSekme === 'yeni_ariza' && secimYontemi === 'qr' && kameraAcik) {
-      scanner = new Html5QrcodeScanner(
-        "personel-qr-reader",
-        { fps: 10, qrbox: { width: 220, height: 220 } },
-        false
-      );
+  // Türkçe Karakter Destekli Canlı Arama/Filtreleme Mantığı
+  const filtrelenmisDemirbaslar = demirbaslar.filter((d) => {
+    if (!aramaMetni.trim()) return true;
+    const arama = aramaMetni.toLocaleLowerCase('tr-TR').trim();
+    const ad = (d.ad || '').toLocaleLowerCase('tr-TR');
+    const birim = (d.birim || '').toLocaleLowerCase('tr-TR');
+    const kod = (d.qr_kod || d.id || '').toString().toLocaleLowerCase('tr-TR');
 
-      scanner.render(
-        (decodedText) => {
-          let okunanQR = decodedText.trim();
-          if (okunanQR.includes('/demirbas/')) {
-            const parts = okunanQR.split('/demirbas/');
-            setSecilenDemirbasId(parts[parts.length - 1]);
-            toast.success('Demirbaş QR doğrulandı.');
-          } else {
-            const eslesen = demirbaslar.find(d => d.qr_kod === okunanQR || d.id.toString() === okunanQR);
-            if (eslesen) {
-              setSecilenDemirbasId(eslesen.id.toString());
-              toast.success(`${eslesen.ad} seçildi.`);
-            } else {
-              toast.error(`"${okunanQR}" QR kodlu demirbaş bulunamadı.`);
-            }
-          }
-          scanner.clear();
-          setKameraAcik(false);
-        },
-        () => {}
-      );
-    }
-
-    return () => {
-      if (scanner) {
-        scanner.clear().catch(e => console.error(e));
-      }
-    };
-  }, [kameraAcik, secimYontemi, demirbaslar, aktifSekme]);
-
-  const handleYontemChange = (yontem) => {
-    setSecimYontemi(yontem);
-    setSecilenDemirbasId('');
-    setKameraAcik(false);
-  };
+    return ad.includes(arama) || birim.includes(arama) || kod.includes(arama);
+  });
 
   // ARIZA BİLDİRİMİ GÖNDERME
   const handleArizaGonder = async (e) => {
     e.preventDefault();
 
     if (!secilenDemirbasId) {
-      toast.warning('Lütfen bir demirbaş/cihaz seçin veya QR kodunu okutun.');
+      toast.warning('Lütfen arızalı demirbaşı listeden seçin.');
       return;
     }
 
@@ -152,6 +112,7 @@ function PersonelPaneli() {
 
       toast.success('Arıza kaydı teknik ekibe başarıyla iletildi!');
       setSecilenDemirbasId('');
+      setAramaMetni('');
       setAciklama('');
       setResim(null);
       setAktifSekme('gecmis');
@@ -164,7 +125,7 @@ function PersonelPaneli() {
     }
   };
 
-  // HESAP SİLME FONKSİYONU (DÜZELTİLDİ: BASE_URL VE /api YOLU KULLANILDILAR)
+  // HESAP SİLME FONKSİYONU
   const handleHesapSil = async () => {
     const userId = localStorage.getItem('userId');
 
@@ -182,7 +143,6 @@ function PersonelPaneli() {
       localStorage.clear();
       window.location.href = '/login';
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error('Hesap silme hatası:', err);
       toast.error(err.response?.data?.error || 'Hesap silinirken sunucu hatası oluştu.');
     }
@@ -202,7 +162,7 @@ function PersonelPaneli() {
   return (
     <div style={{ width: '100%', boxSizing: 'border-box' }}>
       
-      {/* KULLANICI KARŞILAMA KARTI & HESABIMI SİL */}
+      {/* KARŞILAMA KARTI */}
       <div style={styles.headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={styles.userAvatarIcon}>
@@ -212,13 +172,10 @@ function PersonelPaneli() {
             <h2 style={styles.welcomeTitle}>
               Hoş Geldiniz, {personelAd}
             </h2>
-            <div style={styles.subTitleText}>
-              Trabzon Ortahisar Belediyesi • Personel Arıza Bildirim Portalı
-            </div>
+            
           </div>
         </div>
 
-        {/* HESABIMI SİL BUTONU */}
         <button onClick={handleHesapSil} style={styles.deleteAccountBtn}>
           <UserX size={14} /> Hesabımı Sil
         </button>
@@ -252,68 +209,66 @@ function PersonelPaneli() {
 
           <form onSubmit={handleArizaGonder} style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             
-            {/* DEMİRBAŞ SEÇİMİ */}
+            {/* CANLI ARAMA KUTUSU VE LİSTE */}
             <div>
-              <label style={styles.label}>1. DEMİRBAŞ DOĞRULAMA YÖNTEMİ:</label>
-              <div style={styles.subTabGrid}>
-                <button
-                  type="button"
-                  onClick={() => handleYontemChange('qr')}
-                  style={{ ...styles.subTabBtn, ...(secimYontemi === 'qr' ? styles.activeSubTab : {}) }}
-                >
-                  <QrCode size={14} /> Karekod / Barkod Okut
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleYontemChange('manual')}
-                  style={{ ...styles.subTabBtn, ...(secimYontemi === 'manual' ? styles.activeSubTab : {}) }}
-                >
-                  <ListFilter size={14} /> Envanter Listesinden Seç
-                </button>
-              </div>
-
-              {secimYontemi === 'qr' && (
-                <div style={{ marginTop: '10px' }}>
+              <label style={styles.label}>1. ARIZALI DEMİRBAŞI ARA VE SEÇ:</label>
+              
+              <div style={styles.searchBoxWrapper}>
+                <Search size={16} color="#64748b" style={{ marginLeft: '10px' }} />
+                <input
+                  type="text"
+                  placeholder="Demirbaş adı, kod veya birim yazın..."
+                  value={aramaMetni}
+                  onChange={(e) => setAramaMetni(e.target.value)}
+                  style={styles.searchInput}
+                />
+                {aramaMetni && (
                   <button 
                     type="button" 
-                    onClick={() => setKameraAcik(!kameraAcik)}
-                    style={{ ...styles.cameraBtn, background: kameraAcik ? '#ef4444' : '#0f172a' }}
+                    onClick={() => setAramaMetni('')}
+                    style={{ background: 'none', border: 'none', paddingRight: '10px', cursor: 'pointer', color: '#94a3b8' }}
                   >
-                    <Camera size={16} /> {kameraAcik ? 'Kamerayı Kapat' : 'Kamerayı Aç & QR Kod Oku'}
+                    <X size={16} />
                   </button>
+                )}
+              </div>
 
-                  {kameraAcik && (
-                    <div style={{ marginTop: '10px', background: '#ffffff', padding: '8px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
-                      <div id="personel-qr-reader" style={{ width: '100%' }}></div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {secimYontemi === 'manual' && (
-                <div style={{ marginTop: '10px' }}>
-                  <select 
-                    value={secilenDemirbasId} 
-                    onChange={(e) => setSecilenDemirbasId(e.target.value)} 
-                    style={styles.select}
-                  >
-                    <option value="">-- Arızalı Cihazı Seçin --</option>
-                    {demirbaslar.map(d => (
-                      <option key={d.id} value={d.id}>
-                        {d.ad} (QR: {d.qr_kod}) - Birim: {d.birim || 'Genel'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* Tıklanabilir Süzülen Liste */}
+              <div style={styles.listContainer}>
+                {filtrelenmisDemirbaslar.length > 0 ? (
+                  filtrelenmisDemirbaslar.map((d) => {
+                    const seciliMi = secilenDemirbasId.toString() === d.id.toString();
+                    return (
+                      <div
+                        key={d.id}
+                        onClick={() => setSecilenDemirbasId(d.id.toString())}
+                        style={{
+                          ...styles.listItem,
+                          backgroundColor: seciliMi ? '#f0fdf4' : '#ffffff',
+                          borderLeft: seciliMi ? '4px solid #16a34a' : 'none'
+                        }}
+                      >
+                        <div style={{ fontWeight: '700', fontSize: '0.85rem', color: '#0f172a' }}>{d.ad}</div>
+                        <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '2px' }}>
+                          Kod: {d.qr_kod || d.id} | Birim: {d.birim || 'Genel'}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div style={{ padding: '12px', fontSize: '0.8rem', color: '#94a3b8', textAlign: 'center' }}>
+                    Aramanıza uygun demirbaş bulunamadı.
+                  </div>
+                )}
+              </div>
 
               {seciliDemirbas && (
                 <div style={styles.selectedDeviceCard}>
-                  <div style={{ fontWeight: '800', color: '#1e293b', fontSize: '0.88rem' }}>
+                  <div style={{ fontWeight: '800', color: '#166534', fontSize: '0.88rem' }}>
                     ✓ Seçilen Cihaz: {seciliDemirbas.ad}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
-                    Kod: {seciliDemirbas.qr_kod} | Birim: {seciliDemirbas.birim || 'Genel'}
+                  <div style={{ fontSize: '0.75rem', color: '#15803d', marginTop: '2px' }}>
+                    Kod: {seciliDemirbas.qr_kod || seciliDemirbas.id} | Birim: {seciliDemirbas.birim || 'Genel'}
                   </div>
                 </div>
               )}
@@ -494,55 +449,35 @@ const styles = {
     marginBottom: '4px',
     textTransform: 'uppercase'
   },
-  subTabGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '6px',
-    background: '#f1f5f9',
-    padding: '4px',
-    borderRadius: '8px'
-  },
-  subTabBtn: {
-    padding: '8px',
-    border: 'none',
-    background: 'transparent',
-    borderRadius: '6px',
-    fontSize: '0.78rem',
-    fontWeight: '600',
-    color: '#64748b',
-    cursor: 'pointer',
+  searchBoxWrapper: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: '4px'
-  },
-  activeSubTab: {
-    background: '#ffffff',
-    color: '#0f172a',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
-  },
-  cameraBtn: {
-    width: '100%',
-    padding: '10px',
-    color: '#ffffff',
-    border: 'none',
+    border: '1px solid #cbd5e1',
     borderRadius: '8px',
-    fontWeight: '700',
-    fontSize: '0.82rem',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '6px'
+    backgroundColor: '#f8fafc',
+    overflow: 'hidden'
   },
-  select: {
+  searchInput: {
     width: '100%',
     padding: '10px 12px',
-    borderRadius: '8px',
-    border: '1px solid #cbd5e1',
-    fontSize: '0.85rem',
+    border: 'none',
     outline: 'none',
-    backgroundColor: '#f8fafc'
+    fontSize: '0.85rem',
+    backgroundColor: 'transparent'
+  },
+  listContainer: {
+    maxHeight: '180px',
+    overflowY: 'auto',
+    border: '1px solid #cbd5e1',
+    borderRadius: '8px',
+    marginTop: '6px',
+    background: '#ffffff'
+  },
+  listItem: {
+    padding: '10px 12px',
+    borderBottom: '1px solid #f1f5f9',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s'
   },
   selectedDeviceCard: {
     marginTop: '8px',

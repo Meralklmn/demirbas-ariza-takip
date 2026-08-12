@@ -1,18 +1,20 @@
+/* eslint-disable no-unused-vars */
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
-import Login from './pages/Login'; // <--- BURASI: GirisSayfasi yerine Login yapıyoruz
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
+import Login from './pages/Login';
 import PersonelPaneli from './pages/PersonelPaneli';
 import AdminPaneli from './pages/AdminPaneli';
 import DemirbasDetay from './pages/DemirbasDetay';
+import { Menu, X, LogOut, UserCheck, Shield } from 'lucide-react';
 
-// İç Yönlendirme Bileşeni
 function AppRoutes({ role, setRole }) {
   const navigate = useNavigate();
 
   const handleLoginSuccess = (user) => {
     setRole(user.rol);
-    
-    // Yönlendirme
     if (user.rol === 'admin') {
       navigate('/admin');
     } else {
@@ -22,113 +24,208 @@ function AppRoutes({ role, setRole }) {
 
   return (
     <Routes>
-      <Route 
-        path="/login" 
-        element={<Login onLogin={handleLoginSuccess} />} 
-      />
-      <Route 
-        path="/personel" 
-        element={role === 'personel' || role === 'admin' ? <PersonelPaneli /> : <Navigate to="/login" />} 
-      />
-      <Route 
-        path="/admin" 
-        element={role === 'admin' ? <AdminPaneli /> : <Navigate to="/login" />} 
-      />
-      <Route 
-        path="/demirbas/:id" 
-        element={<DemirbasDetay />} 
-      />
-      <Route 
-        path="*" 
-        element={<Navigate to={role ? (role === 'admin' ? '/admin' : '/personel') : '/login'} />} 
-      />
+      <Route path="/login" element={<Login onLogin={handleLoginSuccess} />} />
+      <Route path="/personel" element={role === 'personel' || role === 'admin' ? <PersonelPaneli /> : <Navigate to="/login" />} />
+      <Route path="/admin" element={role === 'admin' ? <AdminPaneli /> : <Navigate to="/login" />} />
+      <Route path="/demirbas/:id" element={<DemirbasDetay />} />
+      <Route path="*" element={<Navigate to={role ? (role === 'admin' ? '/admin' : '/personel') : '/login'} />} />
     </Routes>
   );
 }
 
 function App() {
   const [role, setRole] = useState(localStorage.getItem('userRole') || null);
+  const [sidebarAcik, setSidebarAcik] = useState(false);
 
   const handleLogout = () => {
     localStorage.clear();
     setRole(null);
+    setSidebarAcik(false);
   };
 
   return (
     <Router>
-      <div style={{ width: '100vw', minHeight: '100vh', backgroundColor: '#f8fafc', margin: 0, padding: 0, boxSizing: 'border-box' }}>
+      <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
         
-        {/* ÜST GEZİNTİ VE BAŞLIK ÇUBUĞU */}
-        <header style={{ 
-          background: '#800020', 
-          color: '#ffffff', 
-          padding: '16px 32px', 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <img 
-              src="/trabzon-ortahisar-belediyesi-logo-png_seeklogo-386190.png" 
-              alt="Logo" 
-              style={{ height: '42px', width: 'auto' }}
-              onError={(e) => { e.target.style.display = 'none'; }}
-            />
+        {/* SADE VE NET ÜST BAR */}
+        <header style={styles.header}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {role && (
+              <button 
+                onClick={() => setSidebarAcik(!sidebarAcik)} 
+                style={styles.menuBtn}
+              >
+                {sidebarAcik ? <X size={24} /> : <Menu size={24} />}
+              </button>
+            )}
             <div>
-              <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800', letterSpacing: '0.02em' }}>
-                T.C. TRABZON ORTAHİSAR BELEDİYESİ
-              </h1>
-              <span style={{ fontSize: '0.8rem', opacity: 0.9 }}>
-                Bilgi İşlem Müdürlüğü • Demirbaş Takip Portalı
-              </span>
+              <h1 style={styles.headerTitle}>TRABZON ORTAHİSAR BELEDİYESİ</h1>
+              <span style={styles.headerSub}>Demirbaş & Arıza Takip</span>
             </div>
           </div>
-
-          <nav style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {role ? (
-              <>
-                {role === 'admin' ? (
-                  <Link to="/admin" style={{ color: '#ffffff', textDecoration: 'none', fontWeight: '600', fontSize: '0.9rem' }}>
-                    Yönetim Paneli
-                  </Link>
-                ) : (
-                  <Link to="/personel" style={{ color: '#ffffff', textDecoration: 'none', fontWeight: '600', fontSize: '0.9rem' }}>
-                    Personel Paneli
-                  </Link>
-                )}
-                <button 
-                  onClick={handleLogout}
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.15)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(255, 255, 255, 0.3)',
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontWeight: '600',
-                    fontSize: '0.85rem'
-                  }}
-                >
-                  Çıkış Yap
-                </button>
-              </>
-            ) : (
-              <Link to="/login" style={{ color: '#ffffff', textDecoration: 'none', fontWeight: '600', fontSize: '0.9rem' }}>
-                
-              </Link>
-            )}
-          </nav>
         </header>
 
-        {/* ANA İÇERİK KONTROLÜ */}
-        <main style={{ width: '100%', padding: '24px 32px', boxSizing: 'border-box' }}>
+        {/* SOL MENÜ (DRAWER) */}
+        {role && (
+          <>
+            {sidebarAcik && (
+              <div 
+                onClick={() => setSidebarAcik(false)} 
+                style={styles.backdrop}
+              />
+            )}
+
+            <div style={{
+              ...styles.sidebar,
+              transform: sidebarAcik ? 'translateX(0)' : 'translateX(-100%)'
+            }}>
+              <div style={styles.sidebarHeader}>
+                <span style={{ fontWeight: '800', color: '#800020', fontSize: '1rem' }}>Sistem Menüsü</span>
+                <button onClick={() => setSidebarAcik(false)} style={styles.closeBtn}>
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div style={styles.sidebarNav}>
+                {role === 'admin' ? (
+                  <Link 
+                    to="/admin" 
+                    onClick={() => setSidebarAcik(false)} 
+                    style={styles.sidebarLink}
+                  >
+                    <Shield size={18} /> Yönetim Paneli
+                  </Link>
+                ) : (
+                  <Link 
+                    to="/personel" 
+                    onClick={() => setSidebarAcik(false)} 
+                    style={styles.sidebarLink}
+                  >
+                    <UserCheck size={18} /> Personel Paneli
+                  </Link>
+                )}
+
+                {/* ÇIKIŞ YAP BUTONU METNİ VE İKONU İLE NETLEŞTİRİLDİ */}
+                <button onClick={handleLogout} style={styles.logoutBtn}>
+                  <LogOut size={18} />
+                  <span>Çıkış Yap</span>
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* İÇERİK ALANI */}
+        <main style={{ flex: 1, padding: '16px', boxSizing: 'border-box', maxWidth: '600px', width: '100%', margin: '0 auto' }}>
           <AppRoutes role={role} setRole={setRole} />
         </main>
 
+        <ToastContainer 
+          position="bottom-center"
+          autoClose={2500}
+          hideProgressBar={false}
+          theme="colored"
+        />
       </div>
     </Router>
   );
 }
+
+const styles = {
+  header: {
+    background: '#800020',
+    color: '#ffffff',
+    padding: '12px 16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    position: 'sticky',
+    top: 0,
+    zIndex: 100
+  },
+  menuBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#ffffff',
+    cursor: 'pointer',
+    padding: '4px',
+    display: 'flex',
+    alignItems: 'center'
+  },
+  headerTitle: {
+    margin: 0,
+    fontSize: '0.9rem',
+    fontWeight: '800',
+    letterSpacing: '0.02em'
+  },
+  headerSub: {
+    fontSize: '0.7rem',
+    opacity: 0.85,
+    display: 'block'
+  },
+  backdrop: {
+    position: 'fixed',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    zIndex: 200
+  },
+  sidebar: {
+    position: 'fixed',
+    top: 0, left: 0, bottom: 0,
+    width: '250px',
+    backgroundColor: '#ffffff',
+    zIndex: 201,
+    boxShadow: '4px 0 15px rgba(0,0,0,0.1)',
+    transition: 'transform 0.25s ease-in-out',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  sidebarHeader: {
+    padding: '16px',
+    borderBottom: '1px solid #f1f5f9',
+    display: 'flex',
+    justify: 'space-between',
+    alignItems: 'center'
+  },
+  closeBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#64748b',
+    cursor: 'pointer'
+  },
+  sidebarNav: {
+    padding: '16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  sidebarLink: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    backgroundColor: '#f8fafc',
+    color: '#0f172a',
+    textDecoration: 'none',
+    fontWeight: '700',
+    fontSize: '0.88rem',
+    border: '1px solid #e2e8f0'
+  },
+  logoutBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    backgroundColor: '#fef2f2',
+    color: '#dc2626',
+    border: '1px solid #fecaca',
+    fontWeight: '700',
+    fontSize: '0.88rem',
+    cursor: 'pointer',
+    marginTop: '16px'
+  }
+};
 
 export default App;
