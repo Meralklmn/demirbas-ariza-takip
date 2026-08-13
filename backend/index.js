@@ -1,9 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -18,63 +19,76 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-// 1. Veritabanı Bağlantısı ve Foreign Key Desteği
-const dbPath = path.resolve(__dirname, 'database.sqlite');
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('❌ Veritabanı Hatası:', err.message);
-  } else {
-    console.log('✅ SQLite veritabanına başarıyla bağlandı.');
-    // Foreign Key kısıtlamalarını aktif et
-    db.run('PRAGMA foreign_keys = ON;');
+// 1. PostgreSQL Veritabanı Bağlantısı
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false // Neon ve bulut PostgreSQL bağlantıları için şarttır
   }
 });
 
-// 2. Tabloları Oluşturma
-db.serialize(() => {
-  // Kullanıcılar Tablosu
-  db.run(`
-    CREATE TABLE IF NOT EXISTS kullanicilar (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tc_no VARCHAR(11) UNIQUE NOT NULL,
-      ad_soyad VARCHAR(100) NOT NULL,
-      rol VARCHAR(20) DEFAULT 'personel',
-      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Demirbaşlar Tablosu
-  db.run(`
-    CREATE TABLE IF NOT EXISTS demirbaslar (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      qr_kod VARCHAR(20) UNIQUE NOT NULL,
-      ad VARCHAR(100) NOT NULL,
-      kategori VARCHAR(50),
-      birim VARCHAR(100),
-      konum VARCHAR(150),
-      alim_tarihi DATE,
-      durum VARCHAR(20) DEFAULT 'Aktif',
-      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Arızalar Tablosu
-  db.run(`
-    CREATE TABLE IF NOT EXISTS arizalar (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      demirbas_id INTEGER NOT NULL,
-      aciklama TEXT NOT NULL,
-      bildiren_kisi VARCHAR(100),
-      bildiren_tc VARCHAR(11),
-      bildirim_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      fotograf_url VARCHAR(255),
-      durum VARCHAR(20) DEFAULT 'Açık',
-      cozum_notu TEXT,
-      cozum_tarihi TIMESTAMP,
-      FOREIGN KEY (demirbas_id) REFERENCES demirbaslar(id) ON DELETE CASCADE
-    )
-  `);
+db.connect((err, client, release) => {
+  if (err) {
+    console.error('❌ PostgreSQL Veritabanı Hatası:', err.stack);
+  } else {
+    console.log('✅ PostgreSQL veritabanına başarıyla bağlandı.');
+    release();
+  }
 });
+
+// 2. Tabloları Otomatik Oluşturma (PostgreSQL Uyumlu)
+const initDb = async () => {
+  try {
+    // Kullanıcılar Tablosu
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS kullanicilar (
+        id SERIAL PRIMARY KEY,
+        tc_no VARCHAR(11) UNIQUE NOT NULL,
+        ad_soyad VARCHAR(100) NOT NULL,
+        rol VARCHAR(20) DEFAULT 'personel',
+        olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Demirbaşlar Tablosu
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS demirbaslar (
+        id SERIAL PRIMARY KEY,
+        qr_kod VARCHAR(20) UNIQUE NOT NULL,
+        ad VARCHAR(100) NOT NULL,
+        kategori VARCHAR(50),
+        birim VARCHAR(100),
+        konum VARCHAR(150),
+        alim_tarihi DATE,
+        durum VARCHAR(20) DEFAULT 'Aktif',
+        olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Arızalar Tablosu
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS arizalar (
+        id SERIAL PRIMARY KEY,
+        demirbas_id INTEGER NOT NULL,
+        aciklama TEXT NOT NULL,
+        bildiren_kisi VARCHAR(100),
+        bildiren_tc VARCHAR(11),
+        bildirim_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        fotograf_url VARCHAR(255),
+        durum VARCHAR(20) DEFAULT 'Açık',
+        cozum_notu TEXT,
+        cozum_tarihi TIMESTAMP,
+        CONSTRAINT fk_demirbas FOREIGN KEY (demirbas_id) REFERENCES demirbaslar(id) ON DELETE CASCADE
+      );
+    `);
+
+    console.log('✅ PostgreSQL tabloları başarıyla hazırlandı.');
+  } catch (err) {
+    console.error('❌ Tablo oluşturulurken hata:', err.message);
+  }
+};
+
+initDb();
 
 // Statik Dosya Servisi ve Multer Yapılandırması
 app.use('/uploads', express.static(uploadsDir));
@@ -95,7 +109,7 @@ app.get('/', (req, res) => {
 // A) KULLANICI İŞLEMLERİ
 
 // Kayıt Ol
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { tc_no, ad_soyad, rol } = req.body;
 
   if (!tc_no || tc_no.length !== 11) {
@@ -107,34 +121,35 @@ app.post('/api/register', (req, res) => {
   }
 
   const kullaniciRolu = rol || 'personel';
-  const sql = `INSERT INTO kullanicilar (tc_no, ad_soyad, rol) VALUES (?, ?, ?)`;
-  
-  db.run(sql, [tc_no, ad_soyad, kullaniciRolu], function (err) {
-    if (err) {
-      if (err.message.includes('UNIQUE constraint failed')) {
-        return res.status(400).json({ error: 'Bu T.C. Kimlik Numarası zaten sistemde kayıtlı!' });
-      }
-      return res.status(500).json({ error: 'Kayıt yapılırken veritabanı hatası oluştu.' });
-    }
+  const sql = `INSERT INTO kullanicilar (tc_no, ad_soyad, rol) VALUES ($1, $2, $3) RETURNING *`;
 
-    res.json({ 
-      message: 'Kayıt başarıyla oluşturuldu.', 
-      user: { id: this.lastID, tc_no, ad_soyad, rol: kullaniciRolu } 
+  try {
+    const result = await db.query(sql, [tc_no, ad_soyad, kullaniciRolu]);
+    res.json({
+      message: 'Kayıt başarıyla oluşturuldu.',
+      user: result.rows[0]
     });
-  });
+  } catch (err) {
+    if (err.code === '23505') { // PostgreSQL Unique Constraint Error Code
+      return res.status(400).json({ error: 'Bu T.C. Kimlik Numarası zaten sistemde kayıtlı!' });
+    }
+    res.status(500).json({ error: 'Kayıt yapılırken veritabanı hatası oluştu.' });
+  }
 });
 
 // Giriş Yap
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { tc_no } = req.body;
 
   if (!tc_no) {
     return res.status(400).json({ error: 'T.C. Kimlik No girilmelidir.' });
   }
 
-  const sql = `SELECT * FROM kullanicilar WHERE tc_no = ?`;
-  db.get(sql, [tc_no], (err, row) => {
-    if (err) return res.status(500).json({ error: 'Veritabanı hatası.' });
+  const sql = `SELECT * FROM kullanicilar WHERE tc_no = $1`;
+
+  try {
+    const result = await db.query(sql, [tc_no]);
+    const row = result.rows[0];
 
     if (!row) {
       return res.status(404).json({ message: 'Bu T.C. Kimlik Numarasına ait kayıt bulunamadı. Lütfen önce kayıt olun.' });
@@ -149,130 +164,147 @@ app.post('/api/login', (req, res) => {
         rol: row.rol
       }
     });
-  });
+  } catch (err) {
+    res.status(500).json({ error: 'Veritabanı hatası.' });
+  }
 });
 
 // Kullanıcı Hesabını Sil
-app.delete('/api/kullanicilar/:id', (req, res) => {
+app.delete('/api/kullanicilar/:id', async (req, res) => {
   const { id } = req.params;
-  const sql = 'DELETE FROM kullanicilar WHERE id = ?';
+  const sql = 'DELETE FROM kullanicilar WHERE id = $1';
 
-  db.run(sql, [id], function (err) {
-    if (err) {
-      console.error('Kullanıcı silme hatası:', err);
-      return res.status(500).json({ error: 'Hesap silinirken bir hata oluştu.' });
-    }
+  try {
+    await db.query(sql, [id]);
     res.json({ message: 'Kullanıcı hesabı başarıyla silindi.' });
-  });
+  } catch (err) {
+    console.error('Kullanıcı silme hatası:', err);
+    res.status(500).json({ error: 'Hesap silinirken bir hata oluştu.' });
+  }
 });
 
 // B) DEMİRBAŞ İŞLEMLERİ
 
 // Tüm Demirbaşları Getir
-app.get('/api/demirbaslar', (req, res) => {
-  db.all('SELECT * FROM demirbaslar ORDER BY id DESC', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
+app.get('/api/demirbaslar', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM demirbaslar ORDER BY id DESC');
+    res.json(result.rows || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Tek Demirbaş Getir
-app.get('/api/demirbaslar/:id', (req, res) => {
-  db.get('SELECT * FROM demirbaslar WHERE id = ?', [req.params.id], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get('/api/demirbaslar/:id', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM demirbaslar WHERE id = $1', [req.params.id]);
+    const row = result.rows[0];
+
     if (!row) return res.status(404).json({ message: 'Demirbaş bulunamadı.' });
     res.json(row);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Yeni Demirbaş Ekle
-app.post('/api/demirbaslar', (req, res) => {
+app.post('/api/demirbaslar', async (req, res) => {
   const { qr_kod, ad, kategori, birim, konum, alim_tarihi } = req.body;
-  const sql = `INSERT INTO demirbaslar (qr_kod, ad, kategori, birim, konum, alim_tarihi) VALUES (?, ?, ?, ?, ?, ?)`;
-  
-  db.run(sql, [qr_kod, ad, kategori, birim, konum, alim_tarihi], function (err) {
-    if (err) {
-      if (err.message.includes('UNIQUE constraint failed')) {
-        return res.status(400).json({ error: 'Bu Demirbaş/Seri Kodu zaten kullanılıyor.' });
-      }
-      return res.status(400).json({ error: err.message });
-    }
+  const sql = `INSERT INTO demirbaslar (qr_kod, ad, kategori, birim, konum, alim_tarihi) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`;
 
-    res.json({ id: this.lastID, qr_kod, ad, kategori, birim, konum, alim_tarihi });
-  });
+  try {
+    const result = await db.query(sql, [qr_kod, ad, kategori, birim, konum, alim_tarihi]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Bu Demirbaş/Seri Kodu zaten kullanılıyor.' });
+    }
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Demirbaş Sil (Bağlı arızalarla birlikte)
-app.delete('/api/demirbaslar/:id', (req, res) => {
+app.delete('/api/demirbaslar/:id', async (req, res) => {
   const demirbasId = req.params.id;
-  db.run('DELETE FROM arizalar WHERE demirbas_id = ?', [demirbasId], (err) => {
-    if (err) return res.status(500).json({ error: 'Arızalar silinemedi.' });
-    db.run('DELETE FROM demirbaslar WHERE id = ?', [demirbasId], function (err) {
-      if (err) return res.status(500).json({ error: 'Demirbaş silinemedi.' });
-      res.json({ message: 'Demirbaş ve arıza geçmişi başarıyla silindi.' });
-    });
-  });
+
+  try {
+    // ON DELETE CASCADE kuralımız olduğu için arizalar tablosundaki veriler otomatik silinir, 
+    // ama direkt demirbaşı silebiliriz:
+    await db.query('DELETE FROM demirbaslar WHERE id = $1', [demirbasId]);
+    res.json({ message: 'Demirbaş ve arıza geçmişi başarıyla silindi.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Demirbaş silinemedi.' });
+  }
 });
 
 // C) ARIZA İŞLEMLERİ
 
 // Tüm Arızaları Getir
-app.get('/api/arizalar', (req, res) => {
+app.get('/api/arizalar', async (req, res) => {
   const sql = `
     SELECT arizalar.*, demirbaslar.ad as demirbas_adi, demirbaslar.qr_kod 
     FROM arizalar 
     LEFT JOIN demirbaslar ON arizalar.demirbas_id = demirbaslar.id 
     ORDER BY arizalar.id DESC
   `;
-  db.all(sql, [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
+
+  try {
+    const result = await db.query(sql);
+    res.json(result.rows || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Arıza Kaydı Oluştur (Hem 'resim' hem 'fotograf' alan adı ile gelen yüklemeleri destekler)
-app.post('/api/arizalar', upload.single('resim'), (req, res) => {
+// Arıza Kaydı Oluştur
+app.post('/api/arizalar', upload.single('resim'), async (req, res) => {
   const { demirbas_id, aciklama, bildiren_kisi, bildiren_tc } = req.body;
-  
   const fotograf_url = (req.file && req.file.filename) ? `/uploads/${req.file.filename}` : null;
-  
-  const sql = `INSERT INTO arizalar (demirbas_id, aciklama, bildiren_kisi, bildiren_tc, fotograf_url) VALUES (?, ?, ?, ?, ?)`;
-  
-  db.run(sql, [demirbas_id, aciklama, bildiren_kisi, bildiren_tc, fotograf_url], function (err) {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ id: this.lastID, message: 'Arıza kaydı başarıyla oluşturuldu.' });
-  });
+
+  const sql = `INSERT INTO arizalar (demirbas_id, aciklama, bildiren_kisi, bildiren_tc, fotograf_url) VALUES ($1, $2, $3, $4, $5) RETURNING *`;
+
+  try {
+    const result = await db.query(sql, [demirbas_id, aciklama, bildiren_kisi, bildiren_tc, fotograf_url]);
+    res.json({ id: result.rows[0].id, message: 'Arıza kaydı başarıyla oluşturuldu.' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Arıza Durumunu Güncelle (Çözüldü / İşlemde)
-app.put('/api/arizalar/:id', (req, res) => {
+app.put('/api/arizalar/:id', async (req, res) => {
   const { durum, cozum_notu } = req.body;
   const cozum_tarihi = durum === 'Çözüldü' ? new Date().toISOString() : null;
-  const sql = `UPDATE arizalar SET durum = ?, cozum_notu = ?, cozum_tarihi = ? WHERE id = ?`;
-  
-  db.run(sql, [durum, cozum_notu, cozum_tarihi, req.params.id], function (err) {
-    if (err) return res.status(400).json({ error: err.message });
+  const sql = `UPDATE arizalar SET durum = $1, cozum_notu = $2, cozum_tarihi = $3 WHERE id = $4`;
+
+  try {
+    await db.query(sql, [durum, cozum_notu, cozum_tarihi, req.params.id]);
     res.json({ message: 'Arıza durumu güncellendi.' });
-  });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Arıza Kaydını Sil
-app.delete('/api/arizalar/:id', (req, res) => {
+app.delete('/api/arizalar/:id', async (req, res) => {
   const { id } = req.params;
-  const sql = 'DELETE FROM arizalar WHERE id = ?';
+  const sql = 'DELETE FROM arizalar WHERE id = $1';
 
-  db.run(sql, [id], function (err) {
-    if (err) return res.status(500).json({ error: 'Arıza kaydı silinirken bir hata oluştu.' });
+  try {
+    await db.query(sql, [id]);
     res.json({ message: 'Arıza kaydı başarıyla silindi.' });
-  });
+  } catch (err) {
+    res.status(500).json({ error: 'Arıza kaydı silinirken bir hata oluştu.' });
+  }
 });
 
-// 404 / Hatalı GET İSTEKLERİ İÇİN YAKALAYICI (Hataların Tam Önüne Geçer)
+// 404 / Hatalı GET İSTEKLERİ İÇİN YAKALAYICI
 app.use((req, res) => {
   res.status(404).json({ error: `Aradığınız yol (${req.originalUrl}) bulunamadı veya hatalı HTTP metodu kullanıldı.` });
 });
 
 // Sunucuyu Dinleme
 app.listen(PORT, () => {
-  console.log(`🚀 Sunucu http://localhost:${PORT} adresinde CANLI dinliyor...`);
+  console.log(`Sunucu http://localhost:${PORT} adresinde CANLI dinliyor...`);
 });
